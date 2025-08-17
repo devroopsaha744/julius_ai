@@ -9,10 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@aws-sdk/client-transcribe-streaming": "^3.866.0",
     "aws-sdk": "^2.1692.0",
     "dotenv": "^17.2.1",
     "ioredis": "^5.7.0",
     "mammoth": "^1.10.0",
+    "mic": "^2.1.2",
     "next": "15.4.6",
     "openai": "^5.12.2",
     "pdf-parse": "^1.1.1",
@@ -23,12 +25,14 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20.19.10",
+    "@types/node": "^20.19.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.4.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.2"
   }
 }
