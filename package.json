@@ -20,6 +20,7 @@
     "pdf-parse": "^1.1.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "ws": "^8.18.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -28,6 +29,7 @@
     "@types/node": "^20.19.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "15.4.6",
     "tailwindcss": "^4",
