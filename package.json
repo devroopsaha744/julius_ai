@@ -10,9 +10,11 @@
     "ws-server": "tsx ws-server/server.ts",
     "dev:ws": "tsx watch ws-server/server.ts",
     "dev:all": "concurrently \"npm run dev:ws\" \"npm run dev\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\"",
-    "start:all": "concurrently \"npm run ws-server\" \"npm run start\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\""
+    "start:all": "concurrently \"npm run ws-server\" \"npm run start\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\"",
+    "polly": "tsx lib/utils/awsPolly.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-polly": "^3.871.0",
     "@aws-sdk/client-transcribe-streaming": "^3.866.0",
     "aws-sdk": "^2.1692.0",
     "concurrently": "^9.2.0",
