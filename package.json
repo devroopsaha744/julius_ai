@@ -6,11 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "ws-server": "tsx ws-server/server.ts",
+    "dev:ws": "tsx watch ws-server/server.ts",
+    "dev:all": "concurrently \"npm run dev:ws\" \"npm run dev\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\"",
+    "start:all": "concurrently \"npm run ws-server\" \"npm run start\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\""
   },
   "dependencies": {
     "@aws-sdk/client-transcribe-streaming": "^3.866.0",
     "aws-sdk": "^2.1692.0",
+    "concurrently": "^9.2.0",
     "dotenv": "^17.2.1",
     "ioredis": "^5.7.0",
     "mammoth": "^1.10.0",

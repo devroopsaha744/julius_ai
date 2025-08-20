@@ -1,58 +1,109 @@
 import {
   TranscribeStreamingClient,
   StartStreamTranscriptionCommand,
-  AudioStream
+  AudioStream,
 } from "@aws-sdk/client-transcribe-streaming";
-import { PassThrough } from "stream";
 
-const MAX_CHUNK_BYTES = 32000; // AWS limit
+const SAMPLE_RATE = 16000;
+const BYTES_PER_SAMPLE = 2;
+const CHANNEL_NUMS = 1;
+const CHUNK_SIZE = 1024 * 8;
+const REGION = "us-west-2";
 
-export function createTranscribeClient() {
-  return new TranscribeStreamingClient({
-    region: "us-east-1",
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-    },
-  });
+interface AWSCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
 }
 
-export async function startTranscriptionStream(audioStream: PassThrough) {
-  const client = createTranscribeClient();
+class AWSTranscribeStreaming {
+  private client: TranscribeStreamingClient;
 
-  async function* chunkedAudioStream() {
-    let bufferQueue: Buffer[] = [];
-    let bufferLen = 0;
+  constructor(credentials: AWSCredentials, region: string = REGION) {
+    this.client = new TranscribeStreamingClient({
+      region: region,
+      credentials: {
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
+      },
+    });
+  }
 
-    for await (const chunk of audioStream) {
-      bufferQueue.push(chunk as Buffer);
-      bufferLen += (chunk as Buffer).length;
+  async realTimeTranscribeFromMicrophone(): Promise<void> {
+    try {
+      const audioStream = this.createAudioStreamFromMicrophone();
 
-      while (bufferLen >= MAX_CHUNK_BYTES) {
-        let frame = Buffer.concat(bufferQueue);
-        const toSend = frame.slice(0, MAX_CHUNK_BYTES);
-        yield { AudioEvent: { AudioChunk: toSend } } as AudioStream;
+      const response = await this.client.send(
+        new StartStreamTranscriptionCommand({
+          LanguageCode: "en-US",
+          MediaSampleRateHertz: SAMPLE_RATE,
+          MediaEncoding: "pcm",
+          AudioStream: audioStream,
+        })
+      );
 
-        const remaining = frame.slice(MAX_CHUNK_BYTES);
-        bufferQueue = remaining.length ? [remaining] : [];
-        bufferLen = remaining.length;
+      if (response.TranscriptResultStream) {
+        for await (const event of response.TranscriptResultStream) {
+          if (event.TranscriptEvent) {
+            for (const result of event.TranscriptEvent.Transcript?.Results ?? []) {
+              for (const alt of result.Alternatives ?? []) {
+                console.log(`${result.IsPartial ? "[Partial]" : "[Final]"} ${alt.Transcript}`);
+              }
+            }
+          }
+        }
       }
-    }
 
-    // Send remaining buffer if any
-    if (bufferLen > 0) {
-      let frame = Buffer.concat(bufferQueue);
-      yield { AudioEvent: { AudioChunk: frame } } as AudioStream;
+      console.log("Transcription ended");
+    } catch (error) {
+      console.error("Real-time transcription error:", error);
     }
   }
 
-  const command = new StartStreamTranscriptionCommand({
-    LanguageCode: "en-US",
-    MediaEncoding: "pcm",
-    MediaSampleRateHertz: 16000,
-    AudioStream: chunkedAudioStream(),
-  });
+  private async* createAudioStreamFromMicrophone(): AsyncIterable<AudioStream> {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: SAMPLE_RATE,
+        channelCount: CHANNEL_NUMS,
+        sampleSize: BYTES_PER_SAMPLE * 8,
+      },
+    });
 
-  const response = await client.send(command);
-  return response;
+    const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const source = audioContext.createMediaStreamSource(stream);
+    const processor = audioContext.createScriptProcessor(CHUNK_SIZE, CHANNEL_NUMS, CHANNEL_NUMS);
+
+    const queue: AudioStream[] = [];
+    let resolver: (() => void) | null = null;
+
+    processor.onaudioprocess = (event) => {
+      const inputData = event.inputBuffer.getChannelData(0);
+      const pcmData = new Int16Array(inputData.length);
+
+      for (let i = 0; i < inputData.length; i++) {
+        const sample = Math.max(-1, Math.min(1, inputData[i]));
+        pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      }
+
+      const audioChunk = new Uint8Array(pcmData.buffer);
+      queue.push({ AudioEvent: { AudioChunk: audioChunk } });
+
+      if (resolver) {
+        resolver();
+        resolver = null;
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    while (true) {
+      if (queue.length > 0) {
+        yield queue.shift()!;
+      } else {
+        await new Promise<void>((res) => (resolver = res));
+      }
+    }
+  }
 }
+
+export { AWSTranscribeStreaming };
