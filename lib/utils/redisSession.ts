@@ -1,6 +1,21 @@
 import Redis from "ioredis";
+import { randomUUID } from "crypto";
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 
-const redis = new Redis(process.env.REDIS_URL!);
+const redis = new Redis({
+  host: process.env.HOST,
+  port: Number(process.env.PORT),
+  password: process.env.PASSWORD
+});
+
+export async function createSession() {
+  const sessionId = randomUUID();
+  const key = `session:${sessionId}`;
+  await redis.del(key);
+  await redis.expire(key, 2 * 60 * 60);
+  return sessionId;
+}
 
 export async function addMessage(sessionId: string, role: "user" | "assistant", content: string) {
   const key = `session:${sessionId}`;

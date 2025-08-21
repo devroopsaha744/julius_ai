@@ -11,7 +11,7 @@ const polly = new PollyClient({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
   },
-});
+}); 
 
 async function textToSpeech(text: string, outputFile: string) {
   const command = new SynthesizeSpeechCommand({
@@ -30,5 +30,5 @@ async function textToSpeech(text: string, outputFile: string) {
     console.error("❌ No audio stream received from Polly");
   }
 }
-
+export { textToSpeech };
 // textToSpeech("Hello Devroop, this is AWS Polly speaking!", "output.mp3");
