@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+# google creds
+ambient-catcher-469808-e2-487f4048a23d.json
