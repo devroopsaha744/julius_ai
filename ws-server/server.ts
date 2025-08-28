@@ -13,6 +13,31 @@ dotenv.config({ path: '.env.local' });
 
 const SILENCE_TIMEOUT = 3000;
 const SAMPLE_RATE = 16000;
+const SPEECH_SILENCE_THRESHOLD = 2000; // 2 seconds
+const CODE_IDLE_THRESHOLD = 5000; // 5 seconds
+const KEYSTROKE_DEBOUNCE = 300; // 300ms
+
+interface CodingStreamState {
+  lastKeystroke: number;
+  codeContent: string;
+  hasNewCode: boolean;
+  isTyping: boolean;
+  keystrokeTimer?: NodeJS.Timeout;
+}
+
+interface SpeechStreamState {
+  lastSpeech: number;
+  speechContent: string;
+  hasNewSpeech: boolean;
+  isSpeaking: boolean;
+  silenceTimer?: NodeJS.Timeout;
+}
+
+interface InvocationState {
+  lastInvocation: number;
+  pendingInvocation: boolean;
+  invocationTimer?: NodeJS.Timeout;
+}
 
 interface ClientSession {
   sessionId: string;
@@ -23,7 +48,13 @@ interface ClientSession {
   silenceTimer?: NodeJS.Timeout;
   audioQueue: Uint8Array[];
   transcribeStream?: any;
-  resumeFilePath?: string; // Store resume file path for the session
+  resumeFilePath?: string;
+  
+  // Enhanced coding stage tracking
+  codingState: CodingStreamState;
+  speechState: SpeechStreamState;
+  invocationState: InvocationState;
+  isInCodingStage: boolean;
 }
 
 class InterviewWebSocketServer {
@@ -54,7 +85,26 @@ class InterviewWebSocketServer {
         transcribeClient,
         currentTranscript: '',
         isTranscribing: false,
-        audioQueue: []
+        audioQueue: [],
+        
+        // Initialize coding stage tracking
+        codingState: {
+          lastKeystroke: 0,
+          codeContent: '',
+          hasNewCode: false,
+          isTyping: false
+        },
+        speechState: {
+          lastSpeech: 0,
+          speechContent: '',
+          hasNewSpeech: false,
+          isSpeaking: false
+        },
+        invocationState: {
+          lastInvocation: 0,
+          pendingInvocation: false
+        },
+        isInCodingStage: false
       };
 
       this.clients.set(ws, session);
@@ -91,7 +141,13 @@ class InterviewWebSocketServer {
           await this.handleTextInput(ws, session, message.text);
           break;
         case 'code_input':
-          await this.handleCodeInput(ws, session, message.text, message.code);
+          await this.handleCodeInput(ws, session, message.text, message.code, message.language, message.explanation);
+          break;
+        case 'code_keystroke':
+          await this.handleCodeKeystroke(ws, session, message.code, message.language);
+          break;
+        case 'stage_change':
+          this.handleStageChange(session, message.stage);
           break;
         case 'set_resume_path':
           session.resumeFilePath = message.path;
@@ -99,7 +155,7 @@ class InterviewWebSocketServer {
           break;
       }
     } catch {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid message' }));
+      ws.send(JSON.stringify({ type: 'server_error', message: 'Invalid message' }));
     }
   }
 
@@ -138,7 +194,7 @@ class InterviewWebSocketServer {
       ws.send(JSON.stringify({ type: 'transcription_started' }));
     } catch (error) {
       console.error('❌ Error starting transcription:', error);
-      ws.send(JSON.stringify({ type: 'error', message: 'Failed to start transcription' }));
+      ws.send(JSON.stringify({ type: 'server_error', message: 'Failed to start transcription' }));
     }
   }
 
@@ -194,10 +250,17 @@ class InterviewWebSocketServer {
     const text = session.currentTranscript.trim();
     console.log(`🔇 Silence detected. Processing transcript: "${text}"`);
     
-    ws.send(JSON.stringify({ type: 'final_transcript', transcript: text }));
-
-    session.currentTranscript = '';
-    await this.sendToAgent(ws, session, text);
+    // For coding stage, update speech state and check dual-stream invocation
+    if (session.isInCodingStage) {
+      this.updateSpeechState(session, text, true);
+      session.currentTranscript = '';
+      await this.checkDualStreamInvocation(ws, session);
+    } else {
+      // Normal behavior for non-coding stages
+      ws.send(JSON.stringify({ type: 'final_transcript', transcript: text }));
+      session.currentTranscript = '';
+      await this.sendToAgent(ws, session, text);
+    }
   }
 
   private async handleTextInput(ws: WebSocket, session: ClientSession, text: string) {
@@ -205,17 +268,253 @@ class InterviewWebSocketServer {
     await this.sendToAgent(ws, session, text);
   }
 
-  private async handleCodeInput(ws: WebSocket, session: ClientSession, text: string, code?: string) {
-    ws.send(JSON.stringify({ type: 'final_transcript', transcript: text }));
-    await this.sendToAgent(ws, session, text, code);
+  private async handleCodeInput(ws: WebSocket, session: ClientSession, text: string, code?: string, language?: string, explanation?: string) {
+    // For coding stage, update coding state and check for dual-stream invocation
+    if (session.isInCodingStage) {
+      this.updateCodingState(session, code || '', true);
+      this.updateSpeechState(session, text, true);
+      await this.checkDualStreamInvocation(ws, session, text, code, language, explanation);
+    } else {
+      // Normal behavior for non-coding stages
+      const fullMessage = language && explanation 
+        ? `Language: ${language}\nExplanation: ${explanation}\n\nCode:\n${code || 'No code provided'}\n\nUser Message: ${text}`
+        : text;
+      
+      ws.send(JSON.stringify({ type: 'final_transcript', transcript: fullMessage }));
+      await this.sendToAgent(ws, session, fullMessage, code);
+    }
+  }
+
+  private async handleCodeKeystroke(ws: WebSocket, session: ClientSession, code: string, language?: string) {
+    if (!session.isInCodingStage) return;
+    
+    console.log(`⌨️ Code keystroke tracked - Length: ${code.length}, Language: ${language}`);
+    this.updateCodingState(session, code, false);
+    
+    // Check if we should invoke based on dual-stream state
+    await this.checkDualStreamInvocation(ws, session);
+  }
+
+  private handleStageChange(session: ClientSession, stage: string) {
+    const wasInCodingStage = session.isInCodingStage;
+    session.isInCodingStage = stage === 'coding';
+    
+    if (session.isInCodingStage && !wasInCodingStage) {
+      console.log(`🔄 Entering coding stage - Dual-stream tracking enabled`);
+      this.resetDualStreamState(session);
+    } else if (!session.isInCodingStage && wasInCodingStage) {
+      console.log(`🔄 Exiting coding stage - Dual-stream tracking disabled`);
+      this.cleanupDualStreamTimers(session);
+    }
+  }
+
+  private updateCodingState(session: ClientSession, code: string, isFinalSubmission: boolean = false) {
+    const now = Date.now();
+    const hasNewContent = code !== session.codingState.codeContent;
+    
+    if (hasNewContent || isFinalSubmission) {
+      session.codingState.codeContent = code;
+      session.codingState.lastKeystroke = now;
+      session.codingState.hasNewCode = true;
+      session.codingState.isTyping = !isFinalSubmission;
+      
+      // Clear existing keystroke timer
+      if (session.codingState.keystrokeTimer) {
+        clearTimeout(session.codingState.keystrokeTimer);
+      }
+      
+      // Set timer to detect when coding stops (unless it's a final submission)
+      if (!isFinalSubmission) {
+        session.codingState.keystrokeTimer = setTimeout(() => {
+          session.codingState.isTyping = false;
+          console.log(`⌨️ Code typing stopped`);
+        }, KEYSTROKE_DEBOUNCE);
+      }
+      
+      console.log(`⌨️ Code state updated - Length: ${code.length}, IsTyping: ${session.codingState.isTyping}`);
+    }
+  }
+
+  private updateSpeechState(session: ClientSession, speech: string, isFinalTranscript: boolean = false) {
+    const now = Date.now();
+    const hasNewContent = speech !== session.speechState.speechContent;
+    
+    if (hasNewContent || isFinalTranscript) {
+      session.speechState.speechContent = speech;
+      session.speechState.lastSpeech = now;
+      session.speechState.hasNewSpeech = true;
+      session.speechState.isSpeaking = !isFinalTranscript;
+      
+      // Clear existing silence timer
+      if (session.speechState.silenceTimer) {
+        clearTimeout(session.speechState.silenceTimer);
+      }
+      
+      // Set timer to detect when speech stops (unless it's a final transcript)
+      if (!isFinalTranscript) {
+        session.speechState.silenceTimer = setTimeout(() => {
+          session.speechState.isSpeaking = false;
+          console.log(`🗣️ Speech stopped`);
+        }, SPEECH_SILENCE_THRESHOLD);
+      }
+      
+      console.log(`🗣️ Speech state updated - Length: ${speech.length}, IsSpeaking: ${session.speechState.isSpeaking}`);
+    }
+  }
+
+  private async checkDualStreamInvocation(ws: WebSocket, session: ClientSession, text?: string, code?: string, language?: string, explanation?: string) {
+    if (!session.isInCodingStage || session.invocationState.pendingInvocation) {
+      return;
+    }
+    
+    const now = Date.now();
+    const timeSinceLastInvocation = now - session.invocationState.lastInvocation;
+    
+    // Minimum time between invocations to prevent spam
+    if (timeSinceLastInvocation < 1000) {
+      return;
+    }
+    
+    const speechIdle = !session.speechState.isSpeaking && (now - session.speechState.lastSpeech) > SPEECH_SILENCE_THRESHOLD;
+    const codeIdle = !session.codingState.isTyping && (now - session.codingState.lastKeystroke) > CODE_IDLE_THRESHOLD;
+    
+    const hasNewSpeech = session.speechState.hasNewSpeech;
+    const hasNewCode = session.codingState.hasNewCode;
+    const hasNewContent = hasNewSpeech || hasNewCode;
+    
+    console.log(`🔍 Dual-stream check:`, {
+      speechIdle,
+      codeIdle,
+      hasNewSpeech,
+      hasNewCode,
+      hasNewContent,
+      speechLen: session.speechState.speechContent.length,
+      codeLen: session.codingState.codeContent.length
+    });
+    
+    // Determine if we should invoke based on the rules
+    let shouldInvoke = false;
+    let reason = '';
+    
+    if (text && code) {
+      // Direct submission - invoke immediately
+      shouldInvoke = true;
+      reason = 'Direct code submission';
+    } else if (speechIdle && codeIdle && hasNewContent) {
+      // Both streams are idle and we have new content
+      shouldInvoke = true;
+      reason = 'Both streams idle with new content';
+    } else if (speechIdle && hasNewSpeech && session.codingState.codeContent.length === 0) {
+      // Only speech, no code typed yet
+      shouldInvoke = true;
+      reason = 'Speech only (no code)';
+    } else if (codeIdle && hasNewCode && session.speechState.speechContent.length === 0) {
+      // Only code, no speech yet
+      shouldInvoke = true;
+      reason = 'Code only (no speech)';
+    }
+    
+    if (shouldInvoke) {
+      console.log(`🚀 Invoking LLM - Reason: ${reason}`);
+      session.invocationState.pendingInvocation = true;
+      session.invocationState.lastInvocation = now;
+      
+      // Create comprehensive message
+      const fullMessage = this.createComprehensiveMessage(session, text, code, language, explanation);
+      
+      // Reset new content flags
+      session.speechState.hasNewSpeech = false;
+      session.codingState.hasNewCode = false;
+      
+      // Send to agent
+      ws.send(JSON.stringify({ type: 'final_transcript', transcript: fullMessage }));
+      await this.sendToAgent(ws, session, fullMessage, session.codingState.codeContent);
+      
+      session.invocationState.pendingInvocation = false;
+    } else {
+      // Schedule a delayed check if one stream is still active
+      if (!session.invocationState.invocationTimer) {
+        session.invocationState.invocationTimer = setTimeout(() => {
+          session.invocationState.invocationTimer = undefined;
+          this.checkDualStreamInvocation(ws, session);
+        }, Math.min(SPEECH_SILENCE_THRESHOLD, CODE_IDLE_THRESHOLD));
+      }
+    }
+  }
+
+  private createComprehensiveMessage(session: ClientSession, text?: string, code?: string, language?: string, explanation?: string): string {
+    let message = '';
+    
+    // Add current speech content
+    if (session.speechState.speechContent.trim()) {
+      message += `Speech: ${session.speechState.speechContent.trim()}\n\n`;
+    }
+    
+    // Add any additional text input
+    if (text && text.trim() && text !== session.speechState.speechContent) {
+      message += `Additional Input: ${text.trim()}\n\n`;
+    }
+    
+    // Add code content
+    if (session.codingState.codeContent.trim() || code) {
+      const codeContent = code || session.codingState.codeContent;
+      message += `Code (${language || 'unknown'}):\n\`\`\`${language || ''}\n${codeContent}\n\`\`\`\n\n`;
+    }
+    
+    // Add explanation if provided
+    if (explanation && explanation.trim()) {
+      message += `Explanation: ${explanation.trim()}\n\n`;
+    }
+    
+    return message.trim() || 'No content provided';
+  }
+
+  private resetDualStreamState(session: ClientSession) {
+    // Reset coding state
+    session.codingState.codeContent = '';
+    session.codingState.hasNewCode = false;
+    session.codingState.isTyping = false;
+    session.codingState.lastKeystroke = 0;
+    
+    // Reset speech state
+    session.speechState.speechContent = '';
+    session.speechState.hasNewSpeech = false;
+    session.speechState.isSpeaking = false;
+    session.speechState.lastSpeech = 0;
+    
+    // Reset invocation state
+    session.invocationState.lastInvocation = 0;
+    session.invocationState.pendingInvocation = false;
+    
+    this.cleanupDualStreamTimers(session);
+  }
+
+  private cleanupDualStreamTimers(session: ClientSession) {
+    if (session.codingState.keystrokeTimer) {
+      clearTimeout(session.codingState.keystrokeTimer);
+      session.codingState.keystrokeTimer = undefined;
+    }
+    
+    if (session.speechState.silenceTimer) {
+      clearTimeout(session.speechState.silenceTimer);
+      session.speechState.silenceTimer = undefined;
+    }
+    
+    if (session.invocationState.invocationTimer) {
+      clearTimeout(session.invocationState.invocationTimer);
+      session.invocationState.invocationTimer = undefined;
+    }
   }
 
   private async sendToAgent(ws: WebSocket, session: ClientSession, text: string, userCode?: string) {
+    console.log(`🤖 Sending to agent - Stage: ${session.orchestrator.getCurrentStage()}, Text: "${text}"`);
     ws.send(JSON.stringify({ type: 'processing' }));
     
     try {
       // Get current stage info
       const currentStage = session.orchestrator.getCurrentStage();
+      console.log(`📋 Current stage before processing: ${currentStage}`);
+      
       ws.send(JSON.stringify({ 
         type: 'stage_info', 
         currentStage, 
@@ -223,14 +522,22 @@ class InterviewWebSocketServer {
       }));
 
       // Process message through orchestrator
+      console.log(`🔄 Processing message through orchestrator...`);
       const result = await session.orchestrator.processMessage(
         text, 
         session.resumeFilePath, 
         userCode // Pass user code for coding rounds
       );
       
+      console.log(`✅ Orchestrator result:`, {
+        stageChanged: result.stageChanged,
+        currentStage: result.currentStage,
+        responseLength: result.response?.assistant_message?.length || 0
+      });
+      
       // Send stage change notification if stage changed
       if (result.stageChanged) {
+        console.log(`🔄 Stage changed from ${currentStage} to ${result.currentStage}`);
         ws.send(JSON.stringify({ 
           type: 'stage_changed', 
           previousStage: currentStage,
@@ -240,6 +547,7 @@ class InterviewWebSocketServer {
       }
 
       // Send agent response
+      console.log(`💬 Sending agent response for stage: ${result.currentStage}`);
       ws.send(JSON.stringify({ 
         type: 'agent_response', 
         response: result.response,
@@ -248,6 +556,7 @@ class InterviewWebSocketServer {
 
       // Send scoring and recommendation results if available
       if (result.scoringResult) {
+        console.log(`📊 Sending scoring result`);
         ws.send(JSON.stringify({ 
           type: 'scoring_result', 
           scoring: result.scoringResult 
@@ -255,6 +564,7 @@ class InterviewWebSocketServer {
       }
 
       if (result.recommendationResult) {
+        console.log(`💡 Sending recommendation result`);
         ws.send(JSON.stringify({ 
           type: 'recommendation_result', 
           recommendation: result.recommendationResult 
@@ -262,13 +572,24 @@ class InterviewWebSocketServer {
       }
 
       // Generate audio response
+      console.log(`🔊 Generating audio for response...`);
       await this.generateAudio(ws, result.response.assistant_message);
+      console.log(`✅ Successfully completed sendToAgent for stage: ${result.currentStage}`);
       
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('❌ Error in sendToAgent:', error);
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      console.error('❌ Error details:', {
+        sessionId: session.sessionId,
+        currentStage: session.orchestrator.getCurrentStage(),
+        text: text,
+        hasUserCode: !!userCode
+      });
+      
       ws.send(JSON.stringify({ 
-        type: 'error', 
-        message: error instanceof Error ? error.message : 'Unknown error occurred' 
+        type: 'server_error', 
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        stage: session.orchestrator.getCurrentStage()
       }));
     }
   }

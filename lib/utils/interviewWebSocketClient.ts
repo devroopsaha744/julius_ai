@@ -68,10 +68,19 @@ export class InterviewWebSocketClient {
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        this.emit(data.type, data);
+        console.log('📨 Received WebSocket message:', data);
+        
+        // Handle error messages specially to avoid conflicts with error event
+        if (data.type === 'error') {
+          console.error('❌ Server error:', data.message || 'Unknown server error');
+          this.emit('server_error', data);
+        } else {
+          this.emit(data.type, data);
+        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to parse message';
         console.error('Failed to parse WebSocket message:', errorMessage, event.data);
+        this.emit('parse_error', { message: errorMessage, rawData: event.data });
       }
     };
 
@@ -174,8 +183,29 @@ export class InterviewWebSocketClient {
     this.send({ type: 'text_input', text });
   }
 
-  sendCodeInput(text: string, code: string) {
-    this.send({ type: 'code_input', text, code });
+  sendCodeInput(text: string, code: string, language?: string, explanation?: string) {
+    this.send({ 
+      type: 'code_input', 
+      text, 
+      code,
+      language: language || 'javascript',
+      explanation: explanation || ''
+    });
+  }
+
+  sendCodeKeystroke(code: string, language: string) {
+    this.send({ 
+      type: 'code_keystroke', 
+      code,
+      language 
+    });
+  }
+
+  sendStageChange(stage: string) {
+    this.send({ 
+      type: 'stage_change', 
+      stage 
+    });
   }
 
   setResumePath(path: string) {

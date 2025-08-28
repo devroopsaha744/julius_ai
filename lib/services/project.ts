@@ -12,7 +12,7 @@ export class ProjectAgent {
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
-    const promptPath = path.join(process.cwd(), "lib", "prompts", "PROJECT.txt");
+    const promptPath = path.join(process.cwd(), "lib", "prompts", "project.txt");
     this.prompt = fs.readFileSync(promptPath, "utf-8");
   }
 
@@ -32,7 +32,7 @@ export class ProjectAgent {
     ];
 
     const completion = await groqClient.chat.completions.parse({
-      model: "openai/gpt-oss-120b",
+      model: "gemini-2.0-flash-lite-001",
       messages,
       response_format: zodResponseFormat(InterviewStepSchema, "interview_step")
     });

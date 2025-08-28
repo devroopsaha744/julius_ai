@@ -25,7 +25,7 @@ export class WrapUpAgent {
     ];
 
     const completion = await groqClient.chat.completions.parse({
-      model: "openai/gpt-oss-120b",
+      model: "gemini-2.0-flash-lite-001",
       messages,
       response_format: zodResponseFormat(InterviewStepSchema, "wrapup_step")
     });

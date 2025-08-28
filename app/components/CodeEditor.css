@@ -1,0 +1,122 @@
+/* Code Editor Styles */
+.code-editor-container {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+}
+
+.code-editor-textarea {
+  font-family: inherit;
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+.code-editor-textarea::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.code-editor-textarea::-webkit-scrollbar-track {
+  background: #374151;
+  border-radius: 4px;
+}
+
+.code-editor-textarea::-webkit-scrollbar-thumb {
+  background: #6b7280;
+  border-radius: 4px;
+}
+
+.code-editor-textarea::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Line numbers styling */
+.line-numbers {
+  user-select: none;
+  pointer-events: none;
+  color: #6b7280;
+  background-color: #1f2937;
+  border-right: 1px solid #374151;
+  padding: 12px 8px;
+  text-align: right;
+  white-space: pre;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Fullscreen styles */
+.code-editor-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #111827;
+  padding: 0;
+  margin: 0;
+}
+
+.code-editor-fullscreen .code-editor-textarea {
+  height: calc(100vh - 200px) !important;
+  min-height: calc(100vh - 200px) !important;
+}
+
+/* Animation for transitions */
+.code-editor-transition {
+  transition: all 0.3s ease-in-out;
+}
+
+/* Syntax highlighting placeholder (for future enhancement) */
+.syntax-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+  color: transparent;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  border: 2px solid #374151;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .code-editor-container {
+    font-size: 12px;
+  }
+  
+  .code-editor-fullscreen {
+    padding: 8px;
+  }
+}
+
+/* Focus states */
+.code-editor-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+/* Error states */
+.code-editor-error {
+  border-color: #ef4444;
+}
+
+.code-editor-error:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 1px #ef4444;
+}
