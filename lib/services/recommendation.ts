@@ -1,18 +1,18 @@
 import { groqClient } from "../utils/groqclient";
-import { InterviewScoringSchema, InterviewScoring } from "../models/models";
+import { InterviewRecommendationSchema, InterviewRecommendation } from "../models/models";
 import { zodResponseFormat } from "openai/helpers/zod";
 import fs from "fs";
 import path from "path";
 import { addMessage, getMessages } from "../utils/redisSession";
 import { extractText } from "../utils/extractText";
 
-export class ScoringAgent {
+export class RecommendationAgent {
   private prompt: string;
   private sessionId: string;
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
-    const promptPath = path.join(process.cwd(), "lib", "prompts", "score.txt");
+    const promptPath = path.join(process.cwd(), "lib", "prompts", "recommendation.txt");
     this.prompt = fs.readFileSync(promptPath, "utf-8");
   }
 
@@ -34,10 +34,10 @@ export class ScoringAgent {
     const completion = await groqClient.chat.completions.parse({
       model: "gemini-2.0-flash-lite-001",
       messages,
-      response_format: zodResponseFormat(InterviewScoringSchema, "interview_scoring")
+      response_format: zodResponseFormat(InterviewRecommendationSchema, "interview_recommendation")
     });
 
-    const aiMessage = completion.choices[0].message.parsed as InterviewScoring;
+    const aiMessage = completion.choices[0].message.parsed as InterviewRecommendation;
 
     await addMessage(this.sessionId, "assistant", JSON.stringify(aiMessage));
 

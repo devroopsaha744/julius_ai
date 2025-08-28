@@ -1,6 +1,6 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import { GreetingAgent } from '../lib/services/greet';
+import { InterviewOrchestrator, InterviewStage } from '../lib/services/orchestrator';
 import { textToSpeechBuffer } from '../lib/utils/awsPolly';
 import dotenv from 'dotenv';
 import {
@@ -16,16 +16,17 @@ const SAMPLE_RATE = 16000;
 
 interface ClientSession {
   sessionId: string;
-  greetingAgent: GreetingAgent;
+  orchestrator: InterviewOrchestrator;
   transcribeClient: TranscribeStreamingClient;
   currentTranscript: string;
   isTranscribing: boolean;
   silenceTimer?: NodeJS.Timeout;
   audioQueue: Uint8Array[];
   transcribeStream?: any;
+  resumeFilePath?: string; // Store resume file path for the session
 }
 
-class GreetingWebSocketServer {
+class InterviewWebSocketServer {
   private wss: WebSocketServer;
   private clients: Map<WebSocket, ClientSession> = new Map();
 
@@ -49,7 +50,7 @@ class GreetingWebSocketServer {
 
       const session: ClientSession = {
         sessionId,
-        greetingAgent: new GreetingAgent(sessionId),
+        orchestrator: new InterviewOrchestrator(sessionId),
         transcribeClient,
         currentTranscript: '',
         isTranscribing: false,
@@ -89,6 +90,13 @@ class GreetingWebSocketServer {
         case 'text_input':
           await this.handleTextInput(ws, session, message.text);
           break;
+        case 'code_input':
+          await this.handleCodeInput(ws, session, message.text, message.code);
+          break;
+        case 'set_resume_path':
+          session.resumeFilePath = message.path;
+          ws.send(JSON.stringify({ type: 'resume_path_set', path: message.path }));
+          break;
       }
     } catch {
       ws.send(JSON.stringify({ type: 'error', message: 'Invalid message' }));
@@ -97,63 +105,86 @@ class GreetingWebSocketServer {
 
   private queueAudioChunk(session: ClientSession, buffer: Buffer) {
     if (!session.isTranscribing) return;
+    console.log(`📢 Audio chunk received: ${buffer.length} bytes`);
     session.audioQueue.push(new Uint8Array(buffer));
   }
 
   private async startTranscription(ws: WebSocket, session: ClientSession) {
     if (session.isTranscribing) return;
+    console.log('🎤 Starting transcription...');
     session.isTranscribing = true;
     session.currentTranscript = '';
     session.audioQueue = [];
 
-    const audioStream = this.createAudioStream(session);
+    try {
+      const audioStream = this.createAudioStream(session);
 
-    const command = new StartStreamTranscriptionCommand({
-      LanguageCode: "en-US",
-      MediaSampleRateHertz: SAMPLE_RATE,
-      MediaEncoding: "pcm",
-      AudioStream: audioStream,
-    });
+      const command = new StartStreamTranscriptionCommand({
+        LanguageCode: "en-US",
+        MediaSampleRateHertz: SAMPLE_RATE,
+        MediaEncoding: "pcm",
+        AudioStream: audioStream,
+      });
 
-    const response = await session.transcribeClient.send(command);
-    session.transcribeStream = response;
+      console.log('📡 Sending transcription command to AWS...');
+      const response = await session.transcribeClient.send(command);
+      session.transcribeStream = response;
 
-    if (response.TranscriptResultStream) {
-      this.processTranscripts(ws, session, response.TranscriptResultStream);
+      if (response.TranscriptResultStream) {
+        console.log('✅ Transcription stream established');
+        this.processTranscripts(ws, session, response.TranscriptResultStream);
+      }
+
+      ws.send(JSON.stringify({ type: 'transcription_started' }));
+    } catch (error) {
+      console.error('❌ Error starting transcription:', error);
+      ws.send(JSON.stringify({ type: 'error', message: 'Failed to start transcription' }));
     }
-
-    ws.send(JSON.stringify({ type: 'transcription_started' }));
   }
 
   private async *createAudioStream(session: ClientSession): AsyncIterable<AudioStream> {
+    console.log('🎧 Audio stream generator started');
     while (session.isTranscribing) {
       if (session.audioQueue.length > 0) {
         const chunk = session.audioQueue.shift()!;
+        console.log(`🎵 Sending audio chunk to AWS: ${chunk.length} bytes`);
         yield { AudioEvent: { AudioChunk: chunk } };
-      } else await new Promise(res => setTimeout(res, 10));
+      } else {
+        // Wait for more audio data
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
     }
+    console.log('🔇 Audio stream generator stopped');
   }
 
   private async processTranscripts(ws: WebSocket, session: ClientSession, stream: any) {
-    for await (const event of stream) {
-      if (!event.TranscriptEvent) continue;
-      for (const result of event.TranscriptEvent.Transcript?.Results ?? []) {
-        if (!result.Alternatives?.length) continue;
-        const transcript = result.Alternatives[0].Transcript || '';
-        if (!transcript.trim()) continue;
+    console.log('🎧 Processing transcription stream...');
+    try {
+      for await (const event of stream) {
+        if (!event.TranscriptEvent) continue;
+        for (const result of event.TranscriptEvent.Transcript?.Results ?? []) {
+          if (!result.Alternatives?.length) continue;
+          const transcript = result.Alternatives[0].Transcript || '';
+          if (!transcript.trim()) continue;
 
-        // Only for frontend display
-        if (result.IsPartial) {
-          ws.send(JSON.stringify({ type: 'partial_transcript', transcript, isPartial: true }));
-        } else {
-          session.currentTranscript += transcript + ' ';
-          ws.send(JSON.stringify({ type: 'partial_transcript', transcript: session.currentTranscript.trim(), isPartial: false }));
+          console.log(`📝 Transcript: "${transcript}" (IsPartial: ${result.IsPartial})`);
+
+          // Send partial transcripts for real-time display
+          if (result.IsPartial) {
+            ws.send(JSON.stringify({ type: 'partial_transcript', transcript, isPartial: true }));
+          } else {
+            // Accumulate final transcripts
+            session.currentTranscript += transcript + ' ';
+            ws.send(JSON.stringify({ type: 'partial_transcript', transcript: session.currentTranscript.trim(), isPartial: false }));
+          }
+
+          // Reset silence timer on any speech
+          if (session.silenceTimer) clearTimeout(session.silenceTimer);
+          session.silenceTimer = setTimeout(() => this.processSilence(ws, session), SILENCE_TIMEOUT);
         }
-
-        // Reset silence timer
-        if (session.silenceTimer) clearTimeout(session.silenceTimer);
-        session.silenceTimer = setTimeout(() => this.processSilence(ws, session), SILENCE_TIMEOUT);
       }
+    } catch (error) {
+      console.error('❌ Error processing transcripts:', error);
     }
   }
 
@@ -161,6 +192,8 @@ class GreetingWebSocketServer {
     if (!session.currentTranscript.trim()) return;
 
     const text = session.currentTranscript.trim();
+    console.log(`🔇 Silence detected. Processing transcript: "${text}"`);
+    
     ws.send(JSON.stringify({ type: 'final_transcript', transcript: text }));
 
     session.currentTranscript = '';
@@ -172,11 +205,72 @@ class GreetingWebSocketServer {
     await this.sendToAgent(ws, session, text);
   }
 
-  private async sendToAgent(ws: WebSocket, session: ClientSession, text: string) {
+  private async handleCodeInput(ws: WebSocket, session: ClientSession, text: string, code?: string) {
+    ws.send(JSON.stringify({ type: 'final_transcript', transcript: text }));
+    await this.sendToAgent(ws, session, text, code);
+  }
+
+  private async sendToAgent(ws: WebSocket, session: ClientSession, text: string, userCode?: string) {
     ws.send(JSON.stringify({ type: 'processing' }));
-    const response = await session.greetingAgent.run(text);
-    ws.send(JSON.stringify({ type: 'agent_response', response }));
-    await this.generateAudio(ws, response.assistant_message);
+    
+    try {
+      // Get current stage info
+      const currentStage = session.orchestrator.getCurrentStage();
+      ws.send(JSON.stringify({ 
+        type: 'stage_info', 
+        currentStage, 
+        stageChanged: false 
+      }));
+
+      // Process message through orchestrator
+      const result = await session.orchestrator.processMessage(
+        text, 
+        session.resumeFilePath, 
+        userCode // Pass user code for coding rounds
+      );
+      
+      // Send stage change notification if stage changed
+      if (result.stageChanged) {
+        ws.send(JSON.stringify({ 
+          type: 'stage_changed', 
+          previousStage: currentStage,
+          newStage: result.currentStage,
+          stageChanged: true
+        }));
+      }
+
+      // Send agent response
+      ws.send(JSON.stringify({ 
+        type: 'agent_response', 
+        response: result.response,
+        currentStage: result.currentStage
+      }));
+
+      // Send scoring and recommendation results if available
+      if (result.scoringResult) {
+        ws.send(JSON.stringify({ 
+          type: 'scoring_result', 
+          scoring: result.scoringResult 
+        }));
+      }
+
+      if (result.recommendationResult) {
+        ws.send(JSON.stringify({ 
+          type: 'recommendation_result', 
+          recommendation: result.recommendationResult 
+        }));
+      }
+
+      // Generate audio response
+      await this.generateAudio(ws, result.response.assistant_message);
+      
+    } catch (error) {
+      console.error('Error processing message:', error);
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        message: error instanceof Error ? error.message : 'Unknown error occurred' 
+      }));
+    }
   }
 
   private async generateAudio(ws: WebSocket, text: string) {
@@ -186,9 +280,20 @@ class GreetingWebSocketServer {
   }
 
   private async stopTranscription(ws: WebSocket, session: ClientSession) {
+    console.log('🔇 Stopping transcription...');
     session.isTranscribing = false;
-    if (session.silenceTimer) clearTimeout(session.silenceTimer);
-    if (session.transcribeStream) session.transcribeStream.destroy?.();
+    if (session.silenceTimer) {
+      clearTimeout(session.silenceTimer);
+      session.silenceTimer = undefined;
+    }
+    if (session.transcribeStream) {
+      try {
+        session.transcribeStream.destroy?.();
+      } catch (error) {
+        console.error('Error destroying transcribe stream:', error);
+      }
+      session.transcribeStream = undefined;
+    }
     ws.send(JSON.stringify({ type: 'transcription_stopped' }));
   }
 
@@ -203,4 +308,4 @@ class GreetingWebSocketServer {
 }
 
 const PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT) : 8080;
-export default new GreetingWebSocketServer(PORT);
+export default new InterviewWebSocketServer(PORT);

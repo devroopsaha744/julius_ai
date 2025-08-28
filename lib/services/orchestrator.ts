@@ -5,7 +5,8 @@ import { CSAgent } from './cs';
 import { BehaviouralAgent } from './behave';
 import { WrapUpAgent } from './wrapup';
 import { ScoringAgent } from './score';
-import { InterviewStep, InterviewScoring } from '../models/models';
+import { RecommendationAgent } from './recommendation';
+import { InterviewStep, InterviewScoring, InterviewRecommendation } from '../models/models';
 
 export enum InterviewStage {
   GREET = 'greet',
@@ -29,6 +30,7 @@ export class InterviewOrchestrator {
   private behavioralAgent: BehaviouralAgent;
   private wrapUpAgent: WrapUpAgent;
   private scoringAgent: ScoringAgent;
+  private recommendationAgent: RecommendationAgent;
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -42,6 +44,7 @@ export class InterviewOrchestrator {
     this.behavioralAgent = new BehaviouralAgent(sessionId);
     this.wrapUpAgent = new WrapUpAgent(sessionId);
     this.scoringAgent = new ScoringAgent(sessionId);
+    this.recommendationAgent = new RecommendationAgent(sessionId);
   }
 
   async processMessage(userMessage: string, resumeFilePath?: string, userCode?: string): Promise<{
@@ -49,10 +52,12 @@ export class InterviewOrchestrator {
     currentStage: InterviewStage;
     stageChanged: boolean;
     scoringResult?: InterviewScoring;
+    recommendationResult?: InterviewRecommendation;
   }> {
     const previousStage = this.currentStage;
     let response: InterviewStep;
     let scoringResult: InterviewScoring | undefined;
+    let recommendationResult: InterviewRecommendation | undefined;
 
     switch (this.currentStage) {
       case InterviewStage.GREET:
@@ -96,8 +101,13 @@ export class InterviewOrchestrator {
       case InterviewStage.WRAPUP:
         response = await this.wrapUpAgent.run(userMessage);
         if (this.shouldMoveToNextStage(response)) {
-          // Activate scoring at the end of wrap up
-          scoringResult = await this.activateScoring() || undefined;
+          // Activate scoring and recommendation in parallel at the end of wrap up
+          if (!resumeFilePath) {
+            throw new Error('Resume file path is required for scoring and recommendation stage');
+          }
+          const [scoring, recommendation] = await this.activateScoringAndRecommendation(resumeFilePath);
+          scoringResult = scoring || undefined;
+          recommendationResult = recommendation || undefined;
           this.currentStage = InterviewStage.COMPLETED;
         }
         break;
@@ -117,7 +127,8 @@ export class InterviewOrchestrator {
       response,
       currentStage: this.currentStage,
       stageChanged: previousStage !== this.currentStage,
-      ...(scoringResult && { scoringResult })
+      ...(scoringResult && { scoringResult }),
+      ...(recommendationResult && { recommendationResult })
     };
   }
 
@@ -126,9 +137,9 @@ export class InterviewOrchestrator {
     return response.current_substate === "ready_to_move";
   }
 
-  private async activateScoring(): Promise<InterviewScoring | null> {
+  private async activateScoring(resumeFilePath: string): Promise<InterviewScoring | null> {
     try {
-      const scoringResult = await this.scoringAgent.generateScore();
+      const scoringResult = await this.scoringAgent.run("Please provide comprehensive scoring for this interview.", resumeFilePath);
       console.log(`Interview completed for candidate: ${scoringResult.candidate_id}`);
       console.log(`Final Score: ${scoringResult.overall.final_score}/100`);
       console.log(`Recommendation: ${scoringResult.overall.recommendation}`);
@@ -138,6 +149,26 @@ export class InterviewOrchestrator {
     } catch (error) {
       console.error('Error generating score:', error);
       return null;
+    }
+  }
+
+  private async activateScoringAndRecommendation(resumeFilePath: string): Promise<[InterviewScoring | null, InterviewRecommendation | null]> {
+    try {
+      // Run scoring and recommendation in parallel
+      const [scoringResult, recommendationResult] = await Promise.all([
+        this.scoringAgent.run("Please provide comprehensive scoring for this interview.", resumeFilePath),
+        this.recommendationAgent.run("Please provide detailed recommendations and actionable feedback for this interview.", resumeFilePath)
+      ]);
+
+      console.log(`Interview completed for candidate: ${scoringResult.candidate_id}`);
+      console.log(`Final Score: ${scoringResult.overall.final_score}/100`);
+      console.log(`Recommendation: ${scoringResult.overall.recommendation}`);
+      console.log(`Number of feedback categories: ${recommendationResult.recommendations.length}`);
+
+      return [scoringResult, recommendationResult];
+    } catch (error) {
+      console.error('Error generating score and recommendations:', error);
+      return [null, null];
     }
   }
 
@@ -185,7 +216,25 @@ export class InterviewOrchestrator {
   }
 
   // Get scoring result manually (can be called after interview completion)
-  async generateScoringReport(): Promise<InterviewScoring> {
-    return await this.scoringAgent.generateScore();
+  async generateScoringReport(resumeFilePath: string): Promise<InterviewScoring> {
+    return await this.scoringAgent.run("Please provide comprehensive scoring for this interview.", resumeFilePath);
+  }
+
+  // Get recommendation result manually (can be called after interview completion)
+  async generateRecommendationReport(resumeFilePath: string): Promise<InterviewRecommendation> {
+    return await this.recommendationAgent.run("Please provide detailed recommendations and actionable feedback for this interview.", resumeFilePath);
+  }
+
+  // Get both scoring and recommendation reports in parallel
+  async generateFullReport(resumeFilePath: string): Promise<{
+    scoring: InterviewScoring;
+    recommendation: InterviewRecommendation;
+  }> {
+    const [scoring, recommendation] = await Promise.all([
+      this.generateScoringReport(resumeFilePath),
+      this.generateRecommendationReport(resumeFilePath)
+    ]);
+
+    return { scoring, recommendation };
   }
 }

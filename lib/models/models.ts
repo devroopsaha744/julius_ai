@@ -128,3 +128,22 @@ export const InterviewScoringSchema = z.object({
 });
 
 export type InterviewScoring = z.infer<typeof InterviewScoringSchema>;
+
+// Recommendation Schema
+const RecommendationItemSchema = z.object({
+  category: z.string(),
+  strengths: z.array(z.string()),
+  areasOfImprovement: z.array(z.string()),
+  actionableTips: z.array(z.string()),
+  resources: z.array(z.string()),
+  overallSummary: z.string()
+});
+
+export const InterviewRecommendationSchema = z.object({
+  candidate_id: z.string(),
+  interview_id: z.string(),
+  recommendations: z.array(RecommendationItemSchema),
+  finalAdvice: z.string()
+});
+
+export type InterviewRecommendation = z.infer<typeof InterviewRecommendationSchema>;

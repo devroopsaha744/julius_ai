@@ -11,6 +11,8 @@
     "dev:ws": "tsx watch ws-server/server.ts",
     "dev:all": "concurrently \"npm run dev:ws\" \"npm run dev\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\"",
     "start:all": "concurrently \"npm run ws-server\" \"npm run start\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\"",
+    "health-check": "node scripts/health-check.js",
+    "test-websocket": "node scripts/test-websocket.js",
     "polly": "tsx lib/utils/awsPolly.ts"
   },
   "dependencies": {
