@@ -174,6 +174,21 @@ export default function InterviewInterface() {
         addSystemMessage('Disconnected from interview system. Attempting to reconnect...');
       });
 
+      // Handle new audio playback messages
+      client.on('audio_playback_started', () => {
+        console.log('Audio playback started');
+      });
+
+      client.on('microphone_enabled', (data: any) => {
+        console.log('Microphone enabled:', data.message);
+        addSystemMessage('✅ You can now speak');
+      });
+
+      client.on('transcription_blocked', (data: any) => {
+        console.log('Transcription blocked:', data.message);
+        addSystemMessage(`🚫 ${data.message}`);
+      });
+
       // Add a connection timeout
       const connectionTimeout = setTimeout(() => {
         if (!clientRef.current?.isConnected()) {
@@ -257,12 +272,22 @@ export default function InterviewInterface() {
         audioRef.current.onended = () => {
           setState(prev => ({ ...prev, isPlayingAudio: false }));
           URL.revokeObjectURL(audioUrl);
+          
+          // Notify server that audio playback is finished
+          if (clientRef.current) {
+            clientRef.current.notifyAudioPlaybackFinished();
+          }
         };
         await audioRef.current.play();
       }
     } catch (error) {
       console.error('Error playing audio:', error);
       setState(prev => ({ ...prev, isPlayingAudio: false }));
+      
+      // Notify server even on error to prevent permanent blocking
+      if (clientRef.current) {
+        clientRef.current.notifyAudioPlaybackFinished();
+      }
     }
   };
 
@@ -287,6 +312,23 @@ export default function InterviewInterface() {
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to upload resume');
     }
+  };
+
+  // Helper function to determine microphone state
+  const getMicrophoneState = () => {
+    if (!state.isConnected) {
+      return { blocked: true, reason: 'Not connected' };
+    }
+    if (state.isProcessing) {
+      return { blocked: true, reason: 'Julius is thinking...' };
+    }
+    if (state.isGeneratingAudio) {
+      return { blocked: true, reason: 'Generating audio...' };
+    }
+    if (state.isPlayingAudio) {
+      return { blocked: true, reason: 'Julius is speaking...' };
+    }
+    return { blocked: false, reason: '' };
   };
 
   const startTranscription = async () => {
@@ -596,18 +638,38 @@ export default function InterviewInterface() {
             <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
-                  <button
-                    onClick={state.isTranscribing ? stopTranscription : startTranscription}
-                    disabled={!state.isConnected}
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                      state.isTranscribing
-                        ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/30'
-                        : 'bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-600 shadow-lg shadow-green-500/30'
-                    }`}
-                  >
-                    <div className={`w-3 h-3 rounded-full ${state.isTranscribing ? 'bg-white animate-pulse' : 'bg-white'}`}></div>
-                    <span>{state.isTranscribing ? 'Stop Recording' : 'Start Recording'}</span>
-                  </button>
+                  {(() => {
+                    const micState = getMicrophoneState();
+                    return (
+                      <button
+                        onClick={state.isTranscribing ? stopTranscription : startTranscription}
+                        disabled={micState.blocked}
+                        className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                          state.isTranscribing
+                            ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/30'
+                            : micState.blocked
+                            ? 'bg-yellow-600 text-white cursor-not-allowed shadow-lg shadow-yellow-500/30'
+                            : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/30'
+                        }`}
+                      >
+                        <div className={`w-3 h-3 rounded-full ${
+                          state.isTranscribing 
+                            ? 'bg-white animate-pulse' 
+                            : micState.blocked 
+                            ? 'bg-white animate-pulse' 
+                            : 'bg-white'
+                        }`}></div>
+                        <span>
+                          {state.isTranscribing 
+                            ? 'Stop Recording' 
+                            : micState.blocked 
+                            ? micState.reason 
+                            : 'Start Recording'
+                          }
+                        </span>
+                      </button>
+                    );
+                  })()}
                   
                   {state.isTranscribing && (
                     <div className="flex items-center space-x-2 text-red-400">

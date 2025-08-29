@@ -36,6 +36,7 @@ interface SpeechStreamState {
 interface InvocationState {
   lastInvocation: number;
   pendingInvocation: boolean;
+  audioPlaybackActive: boolean;
   invocationTimer?: NodeJS.Timeout;
 }
 
@@ -102,7 +103,8 @@ class InterviewWebSocketServer {
         },
         invocationState: {
           lastInvocation: 0,
-          pendingInvocation: false
+          pendingInvocation: false,
+          audioPlaybackActive: false
         },
         isInCodingStage: false
       };
@@ -146,6 +148,9 @@ class InterviewWebSocketServer {
         case 'code_keystroke':
           await this.handleCodeKeystroke(ws, session, message.code, message.language);
           break;
+        case 'audio_playback_finished':
+          await this.handleAudioPlaybackFinished(ws, session);
+          break;
         case 'stage_change':
           this.handleStageChange(session, message.stage);
           break;
@@ -161,12 +166,32 @@ class InterviewWebSocketServer {
 
   private queueAudioChunk(session: ClientSession, buffer: Buffer) {
     if (!session.isTranscribing) return;
+    
+    // Block audio input during LLM invocation or audio playback to prevent interruptions
+    if (session.invocationState.pendingInvocation || session.invocationState.audioPlaybackActive) {
+      const reason = session.invocationState.pendingInvocation ? 'LLM invocation in progress' : 'AI audio playback active';
+      console.log(`🚫 Audio blocked: ${reason}`);
+      return;
+    }
+    
     console.log(`📢 Audio chunk received: ${buffer.length} bytes`);
     session.audioQueue.push(new Uint8Array(buffer));
   }
 
   private async startTranscription(ws: WebSocket, session: ClientSession) {
     if (session.isTranscribing) return;
+    
+    // Block transcription start during LLM invocation or audio playback
+    if (session.invocationState.pendingInvocation || session.invocationState.audioPlaybackActive) {
+      const reason = session.invocationState.pendingInvocation ? 'Julius is thinking' : 'Julius is speaking';
+      console.log(`🚫 Transcription blocked: ${reason}`);
+      ws.send(JSON.stringify({ 
+        type: 'transcription_blocked', 
+        message: `Please wait for Julius to finish ${session.invocationState.pendingInvocation ? 'responding' : 'speaking'} before speaking` 
+      }));
+      return;
+    }
+    
     console.log('🎤 Starting transcription...');
     session.isTranscribing = true;
     session.currentTranscript = '';
@@ -419,6 +444,9 @@ class InterviewWebSocketServer {
       session.invocationState.pendingInvocation = true;
       session.invocationState.lastInvocation = now;
       
+      // Notify client that LLM processing has started
+      ws.send(JSON.stringify({ type: 'llm_processing_started' }));
+      
       // Create comprehensive message
       const fullMessage = this.createComprehensiveMessage(session, text, code, language, explanation);
       
@@ -431,6 +459,9 @@ class InterviewWebSocketServer {
       await this.sendToAgent(ws, session, fullMessage, session.codingState.codeContent);
       
       session.invocationState.pendingInvocation = false;
+      
+      // Notify client that LLM processing has finished
+      ws.send(JSON.stringify({ type: 'llm_processing_finished' }));
     } else {
       // Schedule a delayed check if one stream is still active
       if (!session.invocationState.invocationTimer) {
@@ -485,6 +516,7 @@ class InterviewWebSocketServer {
     // Reset invocation state
     session.invocationState.lastInvocation = 0;
     session.invocationState.pendingInvocation = false;
+    session.invocationState.audioPlaybackActive = false;
     
     this.cleanupDualStreamTimers(session);
   }
@@ -508,6 +540,9 @@ class InterviewWebSocketServer {
 
   private async sendToAgent(ws: WebSocket, session: ClientSession, text: string, userCode?: string) {
     console.log(`🤖 Sending to agent - Stage: ${session.orchestrator.getCurrentStage()}, Text: "${text}"`);
+    
+    // Set pending invocation flag to block audio input during processing
+    session.invocationState.pendingInvocation = true;
     ws.send(JSON.stringify({ type: 'processing' }));
     
     try {
@@ -573,8 +608,12 @@ class InterviewWebSocketServer {
 
       // Generate audio response
       console.log(`🔊 Generating audio for response...`);
-      await this.generateAudio(ws, result.response.assistant_message);
-      console.log(`✅ Successfully completed sendToAgent for stage: ${result.currentStage}`);
+      await this.generateAudio(ws, session, result.response.assistant_message);
+      
+      // Clear pending invocation flag but keep audio playback active
+      session.invocationState.pendingInvocation = false;
+      ws.send(JSON.stringify({ type: 'processing_finished' }));
+      console.log(`✅ Successfully completed sendToAgent for stage: ${result.currentStage}, audio playback started`);
       
     } catch (error) {
       console.error('❌ Error in sendToAgent:', error);
@@ -586,18 +625,34 @@ class InterviewWebSocketServer {
         hasUserCode: !!userCode
       });
       
+      // Clear pending invocation flag even on error to re-enable microphone
+      session.invocationState.pendingInvocation = false;
+      
       ws.send(JSON.stringify({ 
         type: 'server_error', 
         message: error instanceof Error ? error.message : 'Unknown error occurred',
         stage: session.orchestrator.getCurrentStage()
       }));
+      
+      // Notify client that processing is finished so microphone can be reactivated
+      ws.send(JSON.stringify({ type: 'processing_finished' }));
     }
   }
 
-  private async generateAudio(ws: WebSocket, text: string) {
+  private async generateAudio(ws: WebSocket, session: ClientSession, text: string) {
     ws.send(JSON.stringify({ type: 'generating_audio' }));
     const buffer = await textToSpeechBuffer(text);
-    ws.send(JSON.stringify({ type: 'audio_response', audio: buffer.toString("base64"), text }));
+    
+    // Set audio playback active state
+    session.invocationState.audioPlaybackActive = true;
+    ws.send(JSON.stringify({ 
+      type: 'audio_response', 
+      audio: buffer.toString("base64"), 
+      text 
+    }));
+    
+    // Notify client that audio playback has started
+    ws.send(JSON.stringify({ type: 'audio_playback_started' }));
   }
 
   private async stopTranscription(ws: WebSocket, session: ClientSession) {
@@ -616,6 +671,15 @@ class InterviewWebSocketServer {
       session.transcribeStream = undefined;
     }
     ws.send(JSON.stringify({ type: 'transcription_stopped' }));
+  }
+
+  private async handleAudioPlaybackFinished(ws: WebSocket, session: ClientSession) {
+    console.log('🔇 Audio playback finished, enabling microphone...');
+    session.invocationState.audioPlaybackActive = false;
+    ws.send(JSON.stringify({ 
+      type: 'microphone_enabled',
+      message: 'You can now speak'
+    }));
   }
 
   private handleDisconnect(ws: WebSocket) {

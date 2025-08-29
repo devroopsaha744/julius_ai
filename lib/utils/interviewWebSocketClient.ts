@@ -201,6 +201,10 @@ export class InterviewWebSocketClient {
     });
   }
 
+  notifyAudioPlaybackFinished() {
+    this.send({ type: 'audio_playback_finished' });
+  }
+
   sendStageChange(stage: string) {
     this.send({ 
       type: 'stage_change', 
