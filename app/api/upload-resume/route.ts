@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { tmpdir } from 'os';
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,32 +48,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create upload directory if it doesn't exist
-    const uploadDir = join(process.cwd(), 'uploads', 'resumes');
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true });
+    // Create temp directory for this session (using OS temp dir for automatic cleanup)
+    const tempDir = join(tmpdir(), 'julius-ai-resumes', sessionId);
+    if (!existsSync(tempDir)) {
+      await mkdir(tempDir, { recursive: true });
     }
 
     // Generate safe filename
     const timestamp = Date.now();
     const fileExtension = file.name.split('.').pop() || 'txt';
     const fileName = `resume_${sessionId}_${timestamp}.${fileExtension}`;
-    const filePath = join(uploadDir, fileName);
+    const filePath = join(tempDir, fileName);
 
-    // Convert file to buffer and save
+    // Convert file to buffer and save to temp directory
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     await writeFile(filePath, buffer);
 
-    // Return success response with file path
+    console.log(`📁 Resume saved to temp directory: ${filePath}`);
+
+    // Return success response with file path (no Redis needed!)
     return NextResponse.json({
       success: true,
-      message: 'Resume uploaded successfully',
+      message: 'Resume uploaded successfully to temp directory',
       filePath: filePath,
       fileName: fileName,
       sessionId: sessionId,
       fileSize: file.size,
-      fileType: file.type
+      fileType: file.type,
+      uploadedAt: new Date().toISOString()
     });
 
   } catch (error) {

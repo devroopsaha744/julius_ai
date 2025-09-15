@@ -4,6 +4,7 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import fs from "fs";
 import path from "path";
 import { addMessage, getMessages } from "../utils/redisSession";
+import { textToSpeechBuffer } from "../utils/elevenlabsTTS";
 
 export class GreetingAgent {
   private prompt: string;
@@ -39,6 +40,15 @@ export class GreetingAgent {
 
     // Store AI's reply
     await addMessage(this.sessionId, "assistant", aiMessage.assistant_message);
+
+    // Synthesize audio for the assistant message and attach as base64 (non-blocking)
+    try {
+      const audioBuf = await textToSpeechBuffer(aiMessage.assistant_message || '');
+      (aiMessage as any).audio_buffer_base64 = audioBuf.toString('base64');
+    } catch (e) {
+      // If TTS fails, continue without audio
+      console.error('TTS synthesis failed for greeting agent:', e);
+    }
 
     return aiMessage;
   }

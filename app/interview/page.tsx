@@ -277,6 +277,17 @@ export default function InterviewInterface() {
           if (clientRef.current) {
             clientRef.current.notifyAudioPlaybackFinished();
           }
+          
+          // 🎯 AUTO-RESUME TRANSCRIPTION AFTER JULIUS STOPS SPEAKING
+          console.log('🎤 Audio playback finished - auto-resuming transcription');
+          addSystemMessage('🎤 Ready to listen - you can speak now');
+          
+          // Auto-start transcription if not already running
+          if (!state.isTranscribing && state.isConnected) {
+            setTimeout(() => {
+              startTranscription();
+            }, 500); // Small delay to ensure clean transition
+          }
         };
         await audioRef.current.play();
       }
@@ -287,6 +298,17 @@ export default function InterviewInterface() {
       // Notify server even on error to prevent permanent blocking
       if (clientRef.current) {
         clientRef.current.notifyAudioPlaybackFinished();
+      }
+      
+      // 🎯 AUTO-RESUME TRANSCRIPTION EVEN ON AUDIO ERROR
+      console.log('🎤 Audio error - auto-resuming transcription');
+      addSystemMessage('🎤 Ready to listen - you can speak now');
+      
+      // Auto-start transcription if not already running
+      if (!state.isTranscribing && state.isConnected) {
+        setTimeout(() => {
+          startTranscription();
+        }, 500);
       }
     }
   };
@@ -326,7 +348,7 @@ export default function InterviewInterface() {
       return { blocked: true, reason: 'Generating audio...' };
     }
     if (state.isPlayingAudio) {
-      return { blocked: true, reason: 'Julius is speaking...' };
+      return { blocked: true, reason: 'Julius speaking (auto-resume after)' };
     }
     return { blocked: false, reason: '' };
   };
@@ -663,7 +685,7 @@ export default function InterviewInterface() {
                           {state.isTranscribing 
                             ? 'Stop Recording' 
                             : micState.blocked 
-                            ? micState.reason 
+                            ? (state.isPlayingAudio ? 'Auto-resuming after Julius...' : micState.reason)
                             : 'Start Recording'
                           }
                         </span>
