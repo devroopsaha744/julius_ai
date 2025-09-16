@@ -1,0 +1,167 @@
+import WebSocket, { WebSocketServer } from 'ws';
+import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+
+import { SessionManager, type InterviewSession } from '../interview/InterviewSession';
+import { AudioManager } from '../audio/AudioManager';
+import { CodingManager } from '../coding/CodingManager';
+import { MessageProcessor } from '../messaging/MessageProcessor';
+import { AgentHandler } from '../agent/AgentHandler';
+import type { WebSocketMessage } from '../types/SessionTypes';
+
+dotenv.config({ path: '.env.local' });
+
+export class InterviewWebSocketServer {
+  private wss: WebSocketServer;
+  private sessionManager: SessionManager;
+  private audioManager: AudioManager;
+  private codingManager: CodingManager;
+  private messageProcessor: MessageProcessor;
+  private agentHandler: AgentHandler;
+
+  constructor(port: number) {
+    this.wss = new WebSocketServer({ port });
+    this.sessionManager = new SessionManager();
+    this.audioManager = new AudioManager();
+    this.codingManager = new CodingManager();
+    this.messageProcessor = new MessageProcessor();
+    this.agentHandler = new AgentHandler();
+    
+    this.setupServer();
+  }
+
+  private setupServer(): void {
+    console.log('🚀 WebSocket server starting...');
+
+    this.wss.on('connection', (ws: WebSocket) => {
+      const sessionId = uuidv4();
+      
+      // No AWS Transcribe client - using Deepgram for STT
+      const session = this.sessionManager.createSession(sessionId);
+      
+      ws.send(JSON.stringify({ type: 'connected', sessionId }));
+
+      ws.on('message', async (data: Buffer) => this.handleMessage(ws, session, data));
+      ws.on('close', () => this.handleDisconnect(session));
+      ws.on('error', () => this.handleDisconnect(session));
+    });
+
+    this.wss.on('listening', () => {
+      console.log(`🎯 WebSocket server listening on port ${this.wss.options.port}`);
+    });
+  }
+
+  private async handleMessage(ws: WebSocket, session: InterviewSession, data: Buffer): Promise<void> {
+    try {
+      const message: WebSocketMessage = JSON.parse(data.toString());
+      
+      switch (message.type) {
+        case 'start_transcription':
+          await this.audioManager.startDeepgramTranscription(ws, session);
+          break;
+          
+        case 'audio_chunk':
+          const chunk = Buffer.from(message.data, 'base64');
+          await this.audioManager.processAudioChunk(session, chunk);
+          break;
+          
+        case 'stop_transcription':
+          await this.audioManager.stopDeepgramTranscription(ws, session);
+          break;
+          
+        case 'text_input':
+          await this.messageProcessor.processTextInput(
+            ws, 
+            session, 
+            message.text!, 
+            this.agentHandler.sendToAgent.bind(this.agentHandler),
+            this.audioManager.synthesizeAndSendAudio.bind(this.audioManager)
+          );
+          break;
+          
+        case 'code_input':
+          await this.messageProcessor.processCodeInput(
+            ws,
+            session,
+            message.text!,
+            message.code,
+            message.language,
+            message.explanation,
+            this.agentHandler.sendToAgent.bind(this.agentHandler),
+            this.audioManager.synthesizeAndSendAudio.bind(this.audioManager)
+          );
+          break;
+          
+        case 'code_keystroke':
+          await this.handleCodeKeystroke(ws, session, message.code!, message.language);
+          break;
+          
+        case 'audio_playback_finished':
+          this.messageProcessor.handleAudioPlaybackFinished(ws, session);
+          break;
+          
+        case 'stage_change':
+          this.codingManager.handleStageChange(session, message.stage!);
+          break;
+          
+        case 'set_resume_path':
+          session.resumeFilePath = message.path;
+          ws.send(JSON.stringify({ type: 'resume_path_set', path: message.path }));
+          break;
+          
+        default:
+          ws.send(JSON.stringify({ type: 'server_error', message: 'Unknown message type' }));
+      }
+    } catch (error) {
+      ws.send(JSON.stringify({ 
+        type: 'server_error', 
+        message: 'Invalid message format' 
+      }));
+    }
+  }
+
+  private async handleCodeKeystroke(
+    ws: WebSocket, 
+    session: InterviewSession, 
+    code: string, 
+    language?: string
+  ): Promise<void> {
+    if (!session.isInCodingStage) return;
+    
+    console.log(`⌨️ Code keystroke tracked - Length: ${code.length}, Language: ${language}`);
+    
+    this.codingManager.updateCodingState(session, code, false);
+    
+    await this.codingManager.checkDualStreamInvocation(
+      ws,
+      session,
+      this.agentHandler.sendToAgent.bind(this.agentHandler)
+    );
+  }
+
+  private handleDisconnect(session: InterviewSession): void {
+    this.sessionManager.deleteSession(session.sessionId);
+  }
+
+  // Public method to get server info
+  getServerInfo(): { port: number; clients: number } {
+    return {
+      port: this.wss.options.port as number,
+      clients: this.wss.clients.size
+    };
+  }
+
+  // Public method to gracefully shutdown
+  async shutdown(): Promise<void> {
+    return new Promise((resolve) => {
+      this.wss.close(() => {
+        console.log('WebSocket server closed');
+        resolve();
+      });
+    });
+  }
+}
+
+// Export default instance
+const PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT) : 8080;
+export default new InterviewWebSocketServer(PORT);

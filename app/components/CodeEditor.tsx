@@ -169,7 +169,7 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
         clearTimeout(keystrokeTimeoutRef.current);
       }
       
-      // Debounce keystroke events (300ms delay)
+      // Debounce keystroke events (300ms delay for immediate feedback)
       keystrokeTimeoutRef.current = setTimeout(() => {
         onKeystroke(newValue, selectedLanguage);
       }, 300);
