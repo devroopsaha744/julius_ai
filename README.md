@@ -77,15 +77,154 @@ This README explains the full data flow end-to-end and how the components coordi
 Diagram: high-level component layout (mermaid)
 
 ```mermaid
-flowchart LR
-  A[Client Browser] -->|WebSocket| B[WS Server (julius-ws)]
-  B --> C[Deepgram STT]
-  B --> D[Orchestrator & Agents]
-  D --> E[LLM / Groq/OpenAI]
-  D --> F[Redis (session store)]
-  D --> G[ElevenLabs TTS]
-  G -->|audio buffer| B -->|base64| A
-  F -->|history| D
+flowchart TB
+    %% Client Layer
+    subgraph CLIENT["🖥️ Client Browser (Next.js + React)"]
+        UI[User Interface]
+        MIC[Microphone Input]
+        EDITOR[Code Editor]
+        PLAYER[Audio Player]
+        UPLOADER[Resume Uploader]
+    end
+
+    %% WebSocket Server Layer
+    subgraph WS_SERVER["🌐 WebSocket Server (julius-ws)"]
+        WS[WebSocket Handler]
+        SESSION[Session Manager]
+        AUDIO_PROC[Audio Processing]
+        DUAL_STREAM[Dual-Stream Logic<br/>Speech + Code]
+    end
+
+    %% External Services Layer
+    subgraph STT_SERVICE["🎤 Speech-to-Text"]
+        DEEPGRAM[Deepgram STT<br/>WebSocket Streaming]
+        AWS_STT[AWS Transcribe<br/>Fallback]
+    end
+
+    subgraph TTS_SERVICE["🔊 Text-to-Speech"]
+        ELEVENLABS[ElevenLabs TTS<br/>Primary]
+        AWS_TTS[AWS Polly<br/>Fallback]
+    end
+
+    %% Core Processing Layer
+    subgraph CORE["🧠 Core Processing"]
+        ORCHESTRATOR[Orchestrator<br/>Stage Machine]
+        
+        subgraph AGENTS["AI Agents"]
+            GREETING[Greeting Agent]
+            PROJECT[Project/Resume Agent]
+            CODING[Coding Agent]
+            CS[Computer Science Agent]
+            BEHAVIORAL[Behavioral Agent]
+            WRAPUP[Wrap-up Agent]
+            SCORING[Scoring Agent]
+            RECOMMEND[Recommendation Agent]
+        end
+        
+        subgraph LLM_SERVICES["🤖 LLM Services"]
+            GROQ[Groq API]
+            OPENAI[OpenAI API]
+        end
+    end
+
+    %% Storage Layer
+    subgraph STORAGE["💾 Storage & Persistence"]
+        REDIS[(Redis<br/>Session Store<br/>Chat History)]
+        FILES[File System<br/>Resume Storage]
+    end
+
+    %% API Layer
+    subgraph API["📡 API Endpoints"]
+        UPLOAD_API[Resume Upload API<br/>/api/upload-resume]
+    end
+
+    %% Data Flow Connections
+    
+    %% Client to WebSocket
+    CLIENT -.->|"WebSocket Events:<br/>• start_transcription<br/>• audio_chunk<br/>• code_input<br/>• code_keystroke<br/>• text_input"| WS_SERVER
+    WS_SERVER -.->|"WebSocket Events:<br/>• partial_transcript<br/>• final_transcript<br/>• audio_response<br/>• agent_response<br/>• stage_changed"| CLIENT
+
+    %% Audio Processing Flow
+    MIC -->|Base64 PCM Audio| AUDIO_PROC
+    AUDIO_PROC -->|Stream Audio| DEEPGRAM
+    DEEPGRAM -->|Partial Transcripts| WS
+    DEEPGRAM -->|Final Transcripts| DUAL_STREAM
+
+    %% Code Processing Flow
+    EDITOR -->|Keystrokes & Code| DUAL_STREAM
+    DUAL_STREAM -->|Combined Message<br/>Code + Speech| ORCHESTRATOR
+
+    %% Stage Management & Agent Routing
+    ORCHESTRATOR -->|Route by Stage| GREETING
+    ORCHESTRATOR -->|Route by Stage| PROJECT
+    ORCHESTRATOR -->|Route by Stage| CODING
+    ORCHESTRATOR -->|Route by Stage| CS
+    ORCHESTRATOR -->|Route by Stage| BEHAVIORAL
+    ORCHESTRATOR -->|Route by Stage| WRAPUP
+
+    %% LLM Integration
+    AGENTS -->|Prompts & Context| GROQ
+    AGENTS -->|Prompts & Context| OPENAI
+    GROQ -->|Responses| AGENTS
+    OPENAI -->|Responses| AGENTS
+
+    %% TTS Flow
+    AGENTS -->|assistant_message| ELEVENLABS
+    ELEVENLABS -->|Audio Buffer| WS
+    WS -->|Base64 Audio| PLAYER
+
+    %% Session Persistence
+    SESSION <-->|Store/Retrieve<br/>Chat History| REDIS
+    ORCHESTRATOR <-->|Load Context<br/>Save Results| REDIS
+
+    %% Resume Handling
+    UPLOADER -->|Multipart Upload| UPLOAD_API
+    UPLOAD_API -->|Store File| FILES
+    FILES -->|Resume Path| PROJECT
+    CLIENT -.->|set_resume_path| SESSION
+
+    %% Scoring & Recommendations (End of Interview)
+    WRAPUP -->|Trigger Scoring| SCORING
+    WRAPUP -->|Trigger Recommendations| RECOMMEND
+    SCORING -->|Results| REDIS
+    RECOMMEND -->|Results| REDIS
+
+    %% Fallback Services
+    DEEPGRAM -.->|Fallback| AWS_STT
+    ELEVENLABS -.->|Fallback| AWS_TTS
+    AWS_STT -.->|Transcripts| DUAL_STREAM
+    AWS_TTS -.->|Audio| WS
+
+    %% Interview Stages Flow
+    subgraph STAGES["📋 Interview Flow"]
+        STAGE1[1. Greeting]
+        STAGE2[2. Resume Review]
+        STAGE3[3. Coding Challenges]
+        STAGE4[4. Computer Science]
+        STAGE5[5. Behavioral Questions]
+        STAGE6[6. Wrap-up & Scoring]
+        
+        STAGE1 --> STAGE2
+        STAGE2 --> STAGE3
+        STAGE3 --> STAGE4
+        STAGE4 --> STAGE5
+        STAGE5 --> STAGE6
+    end
+
+    STAGES -.->|Stage Context| ORCHESTRATOR
+
+    %% Styling - Black background with white text
+    classDef clientClass fill:#000000,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    classDef serverClass fill:#333333,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    classDef serviceClass fill:#1a1a1a,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    classDef storageClass fill:#2a2a2a,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    classDef agentClass fill:#404040,stroke:#ffffff,stroke-width:2px,color:#ffffff
+
+    class CLIENT,UI,MIC,EDITOR,PLAYER,UPLOADER clientClass
+    class WS_SERVER,WS,SESSION,AUDIO_PROC,DUAL_STREAM serverClass
+    class STT_SERVICE,TTS_SERVICE,DEEPGRAM,ELEVENLABS,AWS_STT,AWS_TTS serviceClass
+    class STORAGE,REDIS,FILES storageClass
+    class AGENTS,GREETING,PROJECT,CODING,CS,BEHAVIORAL,WRAPUP,SCORING,RECOMMEND agentClass
 ```
 
 ---
