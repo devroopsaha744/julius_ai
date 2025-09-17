@@ -2,6 +2,10 @@
 
 Julius AI is a comprehensive, AI-powered technical interview platform that conducts full-stack interviews with real-time voice interaction, coding challenges, and detailed performance analytics.
 
+##  Demo Video
+Check out the full walkthrough here:  
+[![Julius AI Demo](https://img.youtube.com/vi/ef-nnittytc/0.jpg)](https://youtu.be/ef-nnittytc?si=pU6UyLKmKL69BBTw)
+
 ## 🚀 Features
 
 ### Core Capabilities
