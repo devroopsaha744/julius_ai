@@ -107,6 +107,25 @@ export default function GreetTestPage() {
         playAudioResponse(data.audio);
         break;
 
+      case 'speak_text':
+        setIsGeneratingAudio(false);
+        try {
+          const text = data?.text || '';
+          if (!text) break;
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.onend = () => {
+            // notify server that playback finished
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: 'audio_playback_finished' }));
+            }
+          };
+          speechSynthesis.cancel();
+          speechSynthesis.speak(utterance);
+        } catch (err) {
+          console.error('Browser TTS fallback error:', err);
+        }
+        break;
+
       case 'transcription_stopped':
         console.log('Transcription stopped');
         break;

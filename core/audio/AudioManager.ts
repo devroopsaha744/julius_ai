@@ -7,7 +7,12 @@ import WebSocket from 'ws';
 export class AudioManager {
   private deepgramService: DeepgramSTTService | null = null;
 
-  async startDeepgramTranscription(ws: WebSocket, session: InterviewSession): Promise<void> {
+  async startDeepgramTranscription(
+    ws: WebSocket,
+    session: InterviewSession,
+    sendToAgent?: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string) => Promise<any>,
+    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>
+  ): Promise<void> {
     if (session.isTranscribing) return;
     
     session.isTranscribing = true;
@@ -20,8 +25,8 @@ export class AudioManager {
 
     const deepgram = session.deepgramService as DeepgramSTTService;
     
-    deepgram.setCallbacks(
-      (transcript: string, isFinal: boolean) => {
+  deepgram.setCallbacks(
+  (transcript: string, isFinal: boolean) => {
         try {
           if (!transcript.trim()) return;
 
@@ -45,8 +50,8 @@ export class AudioManager {
 
           if (session.silenceTimer) clearTimeout(session.silenceTimer);
           session.silenceTimer = setTimeout(() => {
-            this.processSilence(ws, session);
-          }, parseInt(process.env.SILENCE_TIMEOUT || '1500'));
+            this.processSilence(ws, session, sendToAgent, synthesizeAudio);
+          }, parseInt(process.env.SILENCE_TIMEOUT || '2000'));
         } catch (e) {
           console.error('[AudioManager] Error in transcript callback:', e);
         }
@@ -58,7 +63,12 @@ export class AudioManager {
         });
       },
       (utterance) => {
-        this.processSilence(ws, session);
+        // Deepgram reported utterance end / speech_final — process immediately
+        try {
+          this.processSilence(ws, session, sendToAgent, synthesizeAudio);
+        } catch (e) {
+          console.error('[AudioManager] Error processing utterance end:', e);
+        }
       }
     );
 
@@ -103,7 +113,19 @@ export class AudioManager {
     });
   }
 
-  async processAudioChunk(session: InterviewSession, audioChunk: Buffer): Promise<void> {
+  async processAudioChunk(ws: WebSocket, session: InterviewSession, audioChunk: Buffer): Promise<void> {
+    // If the assistant is playing audio, block STT to prevent loopback
+    if (session.invocationState && session.invocationState.audioPlaybackActive) {
+      // Optionally keep a small buffer or drop the chunk
+      // Notify client that transcription is blocked while TTS is playing
+      try {
+        this.sendResponse(ws, { type: 'transcription_blocked', message: 'Assistant audio playing - transcription paused' });
+      } catch (err) {
+        console.error('Error notifying client about transcription block:', err);
+      }
+      return;
+    }
+
     if (session.deepgramService) {
       try {
         await session.deepgramService.sendAudio(audioChunk);
@@ -131,11 +153,23 @@ export class AudioManager {
       this.sendResponse(ws, { type: 'audio_playback_started' });
     } catch (error) {
       console.error('TTS failure:', error);
-      // Continue without audio
+      // Fallback: instruct client to use browser TTS (speechSynthesis)
+      try {
+        session.invocationState.audioPlaybackActive = true;
+        this.sendResponse(ws, { type: 'speak_text', text });
+        this.sendResponse(ws, { type: 'audio_playback_started' });
+      } catch (err) {
+        console.error('Error sending client-side TTS fallback:', err);
+      }
     }
   }
 
-  private async processSilence(ws: WebSocket, session: InterviewSession): Promise<void> {
+  private async processSilence(
+    ws: WebSocket,
+    session: InterviewSession,
+    sendToAgent?: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string) => Promise<any>,
+    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>
+  ): Promise<void> {
     if (!session.currentTranscript.trim()) return;
 
     const text = session.currentTranscript.trim();
@@ -154,7 +188,20 @@ export class AudioManager {
         transcript: text
       });
       session.currentTranscript = '';
-      // This will be handled by the MessageProcessor
+
+      // If we have a sendToAgent callback, invoke the agent immediately (speech_final)
+      if (sendToAgent) {
+        try {
+          const result = await sendToAgent(ws, session, text);
+          if (result && result.response && result.response.assistant_message && synthesizeAudio) {
+            await synthesizeAudio(ws, session, result.response.assistant_message);
+          }
+        } catch (err) {
+          console.error('[AudioManager] Error invoking agent on speech_final:', err);
+        }
+      } else {
+        // Otherwise, MessageProcessor.processSilence would be responsible for invocation
+      }
     }
   }
 
@@ -173,7 +220,7 @@ export class AudioManager {
       if (!isFinalTranscript) {
         session.speechState.silenceTimer = setTimeout(() => {
           session.speechState.isSpeaking = false;
-        }, parseInt(process.env.SPEECH_SILENCE_THRESHOLD || '2000'));
+  }, parseInt(process.env.SPEECH_SILENCE_THRESHOLD || '3000'));
       }
     }
   }

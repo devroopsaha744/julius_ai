@@ -57,12 +57,17 @@ export class InterviewWebSocketServer {
       
       switch (message.type) {
         case 'start_transcription':
-          await this.audioManager.startDeepgramTranscription(ws, session);
+          await this.audioManager.startDeepgramTranscription(
+            ws,
+            session,
+            this.agentHandler.sendToAgent.bind(this.agentHandler),
+            this.audioManager.synthesizeAndSendAudio.bind(this.audioManager)
+          );
           break;
           
         case 'audio_chunk':
           const chunk = Buffer.from(message.data, 'base64');
-          await this.audioManager.processAudioChunk(session, chunk);
+          await this.audioManager.processAudioChunk(ws, session, chunk);
           break;
           
         case 'stop_transcription':

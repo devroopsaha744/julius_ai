@@ -32,7 +32,7 @@ export class ScoringAgent {
     ];
 
     const completion = await groqClient.chat.completions.parse({
-      model: "gemini-2.0-flash-lite-001",
+      model: "openai/gpt-oss-120b",
       messages,
       response_format: zodResponseFormat(InterviewScoringSchema, "interview_scoring")
     });

@@ -160,6 +160,30 @@ export default function InterviewInterface() {
         playAudio(data.audio);
       });
 
+      // Fallback: browser TTS if server-side TTS fails or is not available
+      client.on('speak_text', (data: any) => {
+        try {
+          const text = data?.text || '';
+          if (!text) return;
+          setState(prev => ({ ...prev, isGeneratingAudio: false, isPlayingAudio: true }));
+
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.onend = () => {
+            setState(prev => ({ ...prev, isPlayingAudio: false }));
+            if (clientRef.current) clientRef.current.notifyAudioPlaybackFinished();
+            addSystemMessage('🎤 Ready to listen - you can speak now');
+            if (!state.isTranscribing && state.isConnected) {
+              setTimeout(() => startTranscription(), 500);
+            }
+          };
+          speechSynthesis.cancel();
+          speechSynthesis.speak(utterance);
+        } catch (err) {
+          console.error('Browser TTS error:', err);
+          if (clientRef.current) clientRef.current.notifyAudioPlaybackFinished();
+        }
+      });
+
       client.on('scoring_result', (data: any) => {
         setReportData((prev: any) => ({ ...prev, scoring: data.scoring }));
         addSystemMessage(`Interview completed! Final score: ${data.scoring.overall.final_score}/100`);
@@ -203,8 +227,8 @@ export default function InterviewInterface() {
       });
 
       client.on('transcription_blocked', (data: any) => {
-        console.log('Transcription blocked:', data.message);
-        addSystemMessage(`🚫 ${data.message}`);
+        // Keep this as a console/debug message only to avoid polluting the UI
+        console.debug('Transcription blocked (silently):', data?.message);
       });
 
       // Add a connection timeout

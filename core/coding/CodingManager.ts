@@ -4,7 +4,7 @@ import WebSocket from 'ws';
 
 export class CodingManager {
   private readonly CODE_IDLE_THRESHOLD = 30000; // 30 seconds as requested
-  private readonly SPEECH_SILENCE_THRESHOLD = 1000; // 1 second Deepgram endpoint threshold
+  private readonly SPEECH_SILENCE_THRESHOLD = 3000; // 3 second Deepgram endpoint threshold
   private readonly KEYSTROKE_DEBOUNCE = 300; // 300ms debounce
 
   updateCodingState(session: InterviewSession, code: string, isFinalSubmission: boolean = false): void {

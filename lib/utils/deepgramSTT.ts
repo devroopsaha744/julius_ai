@@ -33,7 +33,7 @@ export class DeepgramSTTService {
     if (this.ws || this._connecting) return true;
     this._connecting = true;
     try {
-      const endpointing = process.env.ENDPOINTING_MS || process.env.DEEPGRAM_ENDPOINTING_MS || '100';
+      const endpointing = process.env.ENDPOINTING_MS || process.env.DEEPGRAM_ENDPOINTING_MS || '2000';
       const sampleRate = process.env.DEEPGRAM_SAMPLE_RATE || '16000';
       const lang = process.env.DEEPGRAM_LANGUAGE || 'en-GB';
       const url =
