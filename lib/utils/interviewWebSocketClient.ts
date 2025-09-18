@@ -37,6 +37,7 @@ export class InterviewWebSocketClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private eventHandlers: Map<string, Function[]> = new Map();
+  private pendingMessages: any[] = [];
 
   constructor(url: string) {
     this.url = url;
@@ -69,7 +70,10 @@ export class InterviewWebSocketClient {
       try {
         const data = JSON.parse(event.data);
         console.log('📨 Received WebSocket message:', data);
-        
+        // Store in pending buffer so late-registered handlers can replay
+        this.pendingMessages.push(data);
+        if (this.pendingMessages.length > 100) this.pendingMessages.shift();
+
         // Handle error messages specially to avoid conflicts with error event
         if (data.type === 'error') {
           console.error('❌ Server error:', data.message || 'Unknown server error');
@@ -138,6 +142,16 @@ export class InterviewWebSocketClient {
       this.eventHandlers.set(event, []);
     }
     this.eventHandlers.get(event)!.push(handler);
+    // Replay any pending messages of this event type that arrived before handler registration
+    try {
+      for (const msg of this.pendingMessages) {
+        if (msg && msg.type === event) {
+          try { handler(msg); } catch (e) { console.error('Error replaying pending WS message to handler:', e); }
+        }
+      }
+    } catch (e) {
+      console.error('Error while replaying pending messages:', e);
+    }
   }
 
   off(event: string, handler: Function) {

@@ -22,27 +22,34 @@ export class AudioManager {
     
     deepgram.setCallbacks(
       (transcript: string, isFinal: boolean) => {
-        if (!transcript.trim()) return;
-        
-        if (isFinal) {
-          session.currentTranscript += transcript + ' ';
-          this.sendResponse(ws, {
-            type: 'partial_transcript',
-            transcript: session.currentTranscript.trim(),
-            isPartial: false
-          });
-        } else {
-          this.sendResponse(ws, {
-            type: 'partial_transcript',
-            transcript,
-            isPartial: true
-          });
+        try {
+          if (!transcript.trim()) return;
+
+          // Debug log to ensure transcripts are received and being emitted to clients
+          console.log(`[AudioManager] Emitting transcript (isFinal=${isFinal}):`, transcript.trim());
+
+          if (isFinal) {
+            session.currentTranscript += transcript + ' ';
+            this.sendResponse(ws, {
+              type: 'partial_transcript',
+              transcript: session.currentTranscript.trim(),
+              isPartial: false
+            });
+          } else {
+            this.sendResponse(ws, {
+              type: 'partial_transcript',
+              transcript,
+              isPartial: true
+            });
+          }
+
+          if (session.silenceTimer) clearTimeout(session.silenceTimer);
+          session.silenceTimer = setTimeout(() => {
+            this.processSilence(ws, session);
+          }, parseInt(process.env.SILENCE_TIMEOUT || '1500'));
+        } catch (e) {
+          console.error('[AudioManager] Error in transcript callback:', e);
         }
-        
-        if (session.silenceTimer) clearTimeout(session.silenceTimer);
-        session.silenceTimer = setTimeout(() => {
-          this.processSilence(ws, session);
-        }, parseInt(process.env.SILENCE_TIMEOUT || '1500'));
       },
       (err) => {
         this.sendResponse(ws, {
@@ -141,6 +148,7 @@ export class AudioManager {
       // This will be handled by the CodingManager
     } else {
       // Normal behavior for non-coding stages
+      console.log('[AudioManager] Emitting final_transcript:', text);
       this.sendResponse(ws, {
         type: 'final_transcript',
         transcript: text

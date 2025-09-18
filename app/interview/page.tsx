@@ -108,12 +108,30 @@ export default function InterviewInterface() {
       });
 
       client.on('partial_transcript', (data: any) => {
-        setCurrentTranscript(data.transcript);
+        try {
+          const t = data?.transcript ?? data?.text ?? '';
+          if (!t) {
+            console.warn('Received partial_transcript with empty payload:', data);
+            return;
+          }
+          console.log('UI received partial_transcript:', t);
+          setCurrentTranscript(String(t));
+        } catch (e) {
+          console.error('Error handling partial_transcript:', e, data);
+        }
       });
 
       client.on('final_transcript', (data: any) => {
-        setCurrentTranscript('');
-        addMessage('user', data.transcript);
+        try {
+          console.log('UI received final_transcript:', data);
+          const t = data?.transcript ?? data?.text ?? '';
+          if (t) {
+            addMessage('user', String(t));
+          }
+          setCurrentTranscript('');
+        } catch (e) {
+          console.error('Error handling final_transcript:', e, data);
+        }
       });
 
       client.on('processing', () => {

@@ -34,6 +34,8 @@ export class DeepgramSTTService {
     this._connecting = true;
     try {
       const endpointing = process.env.ENDPOINTING_MS || process.env.DEEPGRAM_ENDPOINTING_MS || '100';
+      const sampleRate = process.env.DEEPGRAM_SAMPLE_RATE || '16000';
+      const lang = process.env.DEEPGRAM_LANGUAGE || 'en-GB';
       const url =
         'wss://api.deepgram.com/v1/listen' +
         '?model=nova-3' +
@@ -42,10 +44,10 @@ export class DeepgramSTTService {
         '&vad_events=true' +
         `&endpointing=${endpointing}` +
         '&encoding=linear16' +
-        '&sample_rate=48000' +
+        `&sample_rate=${sampleRate}` +
         '&channels=1' +
         '&smart_format=true' +
-        '&language=en-GB';
+        `&language=${encodeURIComponent(lang)}`;
       this._last_url = url;
       return await new Promise<boolean>((resolve) => {
         try {
@@ -98,8 +100,14 @@ export class DeepgramSTTService {
           const alt = alts[0] || {};
           const transcript = alt.transcript || '';
           const isFinal = !!parsed.is_final;
-          if (transcript && this.transcriptCallback) {
-            try { this.transcriptCallback(transcript, isFinal); } catch {}
+          if (transcript && transcript.trim()) {
+            if (this.transcriptCallback) {
+              try { this.transcriptCallback(transcript, isFinal); } catch {}
+            }
+          } else {
+            // Helpful debug when transcript empty (common when sample rate / encoding mismatch)
+            console.log('[STT DEBUG] empty transcript received (possible sample-rate/encoding mismatch)');
+            console.log('[STT DEBUG] parsed event type:', parsed.type || '(unknown)');
           }
           if (parsed.speech_final === true && transcript.trim()) {
             console.log('[STT] Speech final detected, triggering utterance end');

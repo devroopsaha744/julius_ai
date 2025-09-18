@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "ws-server": "tsx ws-server/server.ts",
-    "dev:ws": "tsx watch ws-server/server.ts",
+    "ws-server": "tsx core/server/InterviewWebSocketServer.ts",
+    "dev:ws": "tsx watch core/server/InterviewWebSocketServer.ts",
     "dev:all": "concurrently \"npm run dev:ws\" \"npm run dev\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\"",
     "start:all": "concurrently \"npm run ws-server\" \"npm run start\" --names \"WS,NEXT\" --prefix-colors \"cyan,magenta\"",
     "health-check": "node scripts/health-check.js",
@@ -18,6 +18,7 @@
   "dependencies": {
     "@aws-sdk/client-polly": "^3.871.0",
     "@aws-sdk/client-transcribe-streaming": "^3.873.0",
+    "@elevenlabs/elevenlabs-js": "^2.15.0",
     "aws-sdk": "^2.1692.0",
     "concurrently": "^9.2.0",
     "dotenv": "^17.2.1",
