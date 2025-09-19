@@ -3,6 +3,13 @@ export interface CodingStreamState {
   codeContent: string;
   hasNewCode: boolean;
   isTyping: boolean;
+  hasTyped: boolean;
+  // Boilerplate code for comparison (updated on submit)
+  boilerplateCode: string;
+  // True if the user explicitly submitted the code for review
+  isSubmitted?: boolean;
+  // Timestamp when code was submitted
+  submittedAt?: number;
   keystrokeTimer?: NodeJS.Timeout;
 }
 

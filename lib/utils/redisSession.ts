@@ -60,3 +60,26 @@ export async function deleteSession(sessionId: string) {
   const key = `session:${sessionId}`;
   return await redis.del(key);
 }
+
+// Simple counter helpers for per-session small state (e.g. number of attempts without code)
+export async function incrCounter(sessionId: string, counterName: string) {
+  await ensureConnection();
+  const key = `session:${sessionId}:counter:${counterName}`;
+  const val = await redis.incr(key);
+  // keep the counter TTL aligned with session
+  await redis.expire(key, 2 * 60 * 60);
+  return Number(val);
+}
+
+export async function getCounter(sessionId: string, counterName: string) {
+  await ensureConnection();
+  const key = `session:${sessionId}:counter:${counterName}`;
+  const val = await redis.get(key);
+  return val ? Number(val) : 0;
+}
+
+export async function resetCounter(sessionId: string, counterName: string) {
+  await ensureConnection();
+  const key = `session:${sessionId}:counter:${counterName}`;
+  await redis.del(key);
+}

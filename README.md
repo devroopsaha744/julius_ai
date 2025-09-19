@@ -272,30 +272,30 @@ All stage logic lives in the orchestrator (`lib/services/orchestrator.ts`). Each
 1. Greeting
    - Agent: `GreetingAgent`
    - Goal: Short rapport-building conversation and capture readiness
-   - Signals to move on: `InterviewStep.current_substate === 'ready_to_move'`
+  - Signals to move on: `InterviewStep.substate` must be one of the allowed tokens (see below). The orchestrator advances stages based only on these returned tokens.
    - Typical latency: low — the agent responds rapidly to single-turn inputs
 
 2. Resume Review
    - Agent: `ProjectAgent`
    - Goal: Use uploaded resume to surface talking points and ask clarifying questions
    - Input required: resume file (path configured via `set_resume_path`)
-   - Move condition: agent returns `current_substate === 'ready_to_move'`
+  - Move condition: agent returns one of the allowed substates (`greet`,`resume`,`coding`,`cs`,`behave`,`wrap_up`,`end`)
 
 3. Coding
    - Agent: `CodingAgent`
    - Goal: Present live coding challenges and evaluate submitted code
    - Special: This stage uses the dual-stream (speech + code) invocation logic — see the separate section below
-   - Move condition: `current_substate === 'ready_to_move'`
+  - Move condition: `substate` one of the allowed tokens listed above.
 
 4. Computer Science (CS)
-   - Agent: `CSAgent`
-   - Goal: Ask concept and system-design questions; capture responses via speech or text
-   - Move: `ready_to_move` substate
+  - Agent: `CSAgent`
+  - Goal: Ask concept and system-design questions; capture responses via speech or text
+  - Move: driven by returned `substate` token (allowed: `greet`,`resume`,`coding`,`cs`,`behave`,`wrap_up`,`end`)
 
 5. Behavioral
    - Agent: `BehaviouralAgent`
    - Goal: STAR questions, situational behavior; evaluate for cultural fit
-   - Move: `ready_to_move`
+  - Move: driven by returned `substate` token (allowed: `greet`,`resume`,`coding`,`cs`,`behave`,`wrap_up`,`end`)
 
 6. Wrap-up
    - Agent: `WrapUpAgent`
@@ -416,10 +416,10 @@ Key invariant: only `assistant_message` audio is synthesized and emitted. The sy
 ## How stage transitions are decided
 
 - Each Agent returns `InterviewStep.current_substate`.
-- The orchestrator (`InterviewOrchestrator`) moves to next stage when `current_substate === 'ready_to_move'`.
+- The orchestrator (`InterviewOrchestrator`) moves to next stage only when the agent returns one of the allowed substate tokens listed above. Do not use 'ready_to_move'.
 - Stage transitions are broadcast by the server via `stage_changed` with previous and new stage info.
 
-Example: After GreetingAgent returns `current_substate = 'ready_to_move'`, the orchestrator sets stage to `resume` and the server emits `stage_changed`.
+Example: After the agent returns `substate = 'resume'`, the orchestrator sets stage to `resume` and the server emits `stage_changed`.
 
 ---
 

@@ -13,6 +13,7 @@ export interface InterviewSession {
   transcribeStream?: any;
   deepgramService?: DeepgramSTTService | null;
   resumeFilePath?: string;
+  currentLanguage?: string; // Current programming language for coding
   codingState: CodingStreamState;
   speechState: SpeechStreamState;
   invocationState: InvocationState;
@@ -22,6 +23,64 @@ export interface InterviewSession {
 export class SessionManager {
   private sessions: Map<string, InterviewSession> = new Map();
 
+  private getBoilerplateCode(language: string = 'python'): string {
+    const boilerplates: Record<string, string> = {
+      'python': `# Python Solution
+def solution():
+    # Your code here
+    return result
+
+# Test your function
+print(solution())`,
+      'javascript': `// JavaScript Solution
+function solution() {
+    // Your code here
+    return result;
+}
+
+// Test your function
+console.log(solution());`,
+      'java': `// Java Solution
+public class Solution {
+    public static void main(String[] args) {
+        // Your code here
+        System.out.println(solution());
+    }
+    
+    public static int solution() {
+        // Your code here
+        return 0;
+    }
+}`,
+      'cpp': `// C++ Solution
+#include <iostream>
+
+int solution() {
+    // Your code here
+    return 0;
+}
+
+int main() {
+    std::cout << solution() << std::endl;
+    return 0;
+}`,
+      'csharp': `// C# Solution
+using System;
+
+class Solution {
+    static void Main() {
+        Console.WriteLine(SolutionMethod());
+    }
+    
+    static int SolutionMethod() {
+        // Your code here
+        return 0;
+    }
+}`
+    };
+    return boilerplates[language.toLowerCase()] || boilerplates['python'];
+  }
+
   createSession(sessionId: string): InterviewSession {
     const session: InterviewSession = {
       sessionId,
@@ -29,11 +88,14 @@ export class SessionManager {
       currentTranscript: '',
       isTranscribing: false,
       audioQueue: [],
+      currentLanguage: 'python', // Default to Python
       codingState: {
         lastKeystroke: 0,
         codeContent: '',
         hasNewCode: false,
-        isTyping: false
+        isTyping: false,
+        hasTyped: false,
+        boilerplateCode: this.getBoilerplateCode('python')
       },
       speechState: {
         lastSpeech: 0,

@@ -1,10 +1,3 @@
-// Export all service agents
-export { GreetingAgent } from './greet';
-export { ProjectAgent } from './project';
-export { CodingAgent } from './coding';
-export { CSAgent } from './cs';
-export { BehaviouralAgent } from './behave';
-export { WrapUpAgent } from './wrapup';
-export { ScoringAgent } from './score';
-export { RecommendationAgent } from './recommendation';
+// Export unified agent and orchestrator
+export { UnifiedInterviewAgent } from './unified_agent';
 export { InterviewOrchestrator, InterviewStage } from './orchestrator';

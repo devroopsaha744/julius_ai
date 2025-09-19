@@ -3,7 +3,7 @@ import type { WebSocketResponse } from '../types/SessionTypes';
 import WebSocket from 'ws';
 
 export class CodingManager {
-  private readonly CODE_IDLE_THRESHOLD = 30000; // 30 seconds as requested
+  private readonly CODE_IDLE_THRESHOLD = 1000; // 1 second as requested
   private readonly SPEECH_SILENCE_THRESHOLD = 3000; // 3 second Deepgram endpoint threshold
   private readonly KEYSTROKE_DEBOUNCE = 300; // 300ms debounce
 
@@ -15,15 +15,16 @@ export class CodingManager {
       session.codingState.codeContent = code;
       session.codingState.lastKeystroke = now;
       session.codingState.hasNewCode = true;
+      // mark typing state and submitted state
       session.codingState.isTyping = !isFinalSubmission;
+      // Set hasTyped only if code content differs from boilerplate
+      const hasChangedFromBoilerplate = code.trim() !== session.codingState.boilerplateCode.trim();
+      if (!isFinalSubmission) {
+        session.codingState.hasTyped = hasChangedFromBoilerplate;
+      }
+      session.codingState.isSubmitted = !!isFinalSubmission;
       
       if (session.codingState.keystrokeTimer) clearTimeout(session.codingState.keystrokeTimer);
-      
-      if (!isFinalSubmission) {
-        session.codingState.keystrokeTimer = setTimeout(() => {
-          session.codingState.isTyping = false;
-        }, this.KEYSTROKE_DEBOUNCE);
-      }
     }
   }
 
@@ -54,7 +55,8 @@ export class CodingManager {
     text?: string,
     code?: string,
     language?: string,
-    explanation?: string
+    explanation?: string,
+    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>
   ): Promise<void> {
     if (!session.isInCodingStage || session.invocationState.pendingInvocation) return;
     
@@ -67,47 +69,80 @@ export class CodingManager {
     const codeIdle = !session.codingState.isTyping && 
                     (now - session.codingState.lastKeystroke) > this.CODE_IDLE_THRESHOLD;
     
-    const hasNewSpeech = session.speechState.hasNewSpeech;
-    const hasNewCode = session.codingState.hasNewCode;
-    const hasNewContent = hasNewSpeech || hasNewCode;
+  const hasNewSpeech = session.speechState.hasNewSpeech;
+  const hasNewCode = session.codingState.hasNewCode;
+  const hasNewContent = hasNewSpeech || hasNewCode;
     
+    // Determine if submitted code exists (only submitted code should be forwarded)
+    const codeSubmittedAvailable = !!(session.codingState.isSubmitted && session.codingState.codeContent && session.codingState.codeContent.length > 0);
+
     let shouldInvoke = false;
+
+    // RULES:
+    // 1) If user has not typed yet (hasTyped=false), speech-only uses VAD
+    //    -> speechIdle triggers invocation with transcript-only or transcript+submitted-code
+    // 2) If user has typed (hasTyped=true), only invoke on explicit Submit
+    //    -> no auto-invocation during typing, only on submit
+
+    const hasTyped = session.codingState.hasTyped;
+
+    console.log(`[CodingManager] Checking invocation: speechIdle=${speechIdle}, codeIdle=${codeIdle}, hasNewSpeech=${hasNewSpeech}, hasNewCode=${hasNewCode}, codeSubmittedAvailable=${codeSubmittedAvailable}, hasTyped=${hasTyped}, text=${!!text}`);
     
-    // Invoke if both text and code are provided
-    if (text && code) {
+    // Explicit submission always triggers (if code present)
+    if (text && codeSubmittedAvailable) {
       shouldInvoke = true;
     }
-    // Invoke if both speech and code are idle and there's new content
-    else if (speechIdle && codeIdle && hasNewContent) {
+
+    // If user has not typed yet, allow speech-only endpointing to trigger invocation
+    else if (!hasTyped && speechIdle && (hasNewSpeech || codeSubmittedAvailable)) {
       shouldInvoke = true;
     }
-    // Invoke if speech is idle and there's new speech but no code
-    else if (speechIdle && hasNewSpeech && session.codingState.codeContent.length === 0) {
+
+    // If user has not typed yet and code is idle, allow submitted code to trigger even without speech
+    else if (!hasTyped && codeIdle && hasNewCode && codeSubmittedAvailable && session.speechState.speechContent.length === 0) {
       shouldInvoke = true;
     }
-    // Invoke if code is idle and there's new code but no speech
-    else if (codeIdle && hasNewCode && session.speechState.speechContent.length === 0) {
-      shouldInvoke = true;
-    }
+
+    // Otherwise, DO NOT invoke while typing is active unless explicit submission occurs above
+    console.log(`[CodingManager] shouldInvoke=${shouldInvoke}`);
     
     if (shouldInvoke) {
       session.invocationState.pendingInvocation = true;
       session.invocationState.lastInvocation = now;
-      
+
       this.sendResponse(ws, { type: 'llm_processing_started' });
-      
-      const fullMessage = this.createComprehensiveMessage(session, text, code, language, explanation);
-      
+
+      // Only forward submitted code; if code present but not submitted, withhold content and only note draft presence
+      const codeToSend = session.codingState.isSubmitted ? (code || session.codingState.codeContent) : undefined;
+      const fullMessage = this.createComprehensiveMessage(session, text, codeToSend, language, explanation);
+
+      // Reset 'hasNew' flags but retain isSubmitted until after successful invocation
       session.speechState.hasNewSpeech = false;
       session.codingState.hasNewCode = false;
-      
+
       this.sendResponse(ws, {
         type: 'final_transcript',
         transcript: fullMessage
       });
+
+      const result = await sendToAgent(ws, session, fullMessage, codeToSend);
       
-      await sendToAgent(ws, session, fullMessage, session.codingState.codeContent);
-      
+      // Synthesize audio for the assistant's response if TTS is provided
+      if (synthesizeAudio && result && result.response && result.response.assistant_message) {
+        await synthesizeAudio(ws, session, result.response.assistant_message);
+      }
+
+      // After agent processed an explicit submitted invocation, clear submitted flag so subsequent typing behaves normally
+      if (session.codingState.isSubmitted) {
+        session.codingState.isSubmitted = false;
+        session.codingState.submittedAt = undefined;
+        session.codingState.hasTyped = false; // Reset hasTyped after submit
+        // Update boilerplate to the submitted code for future comparisons
+        if (codeToSend) {
+          session.codingState.boilerplateCode = codeToSend;
+        }
+      }
+
       session.invocationState.pendingInvocation = false;
       this.sendResponse(ws, { type: 'llm_processing_finished' });
     } else {
@@ -155,6 +190,7 @@ export class CodingManager {
     session.codingState.codeContent = '';
     session.codingState.hasNewCode = false;
     session.codingState.isTyping = false;
+    session.codingState.hasTyped = false;
     session.codingState.lastKeystroke = 0;
     
     session.speechState.speechContent = '';

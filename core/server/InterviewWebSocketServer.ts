@@ -85,16 +85,96 @@ export class InterviewWebSocketServer {
           break;
           
         case 'code_input':
-          await this.messageProcessor.processCodeInput(
-            ws,
-            session,
-            message.text!,
-            message.code,
-            message.language,
-            message.explanation,
-            this.agentHandler.sendToAgent.bind(this.agentHandler),
-            this.audioManager.synthesizeAndSendAudio.bind(this.audioManager)
-          );
+          // If we're in the coding stage, treat this as a submission: mark code submitted
+          // and trigger the coding manager to invoke the agent with the transcript + submitted code.
+          if (session.isInCodingStage) {
+            // Update language if provided and update boilerplate accordingly
+            if (message.language && message.language !== session.currentLanguage) {
+              session.currentLanguage = message.language;
+              // Update boilerplate for new language
+              const boilerplates: Record<string, string> = {
+                'python': `# Python Solution
+def solution():
+    # Your code here
+    return result
+
+# Test your function
+print(solution())`,
+                'javascript': `// JavaScript Solution
+function solution() {
+    // Your code here
+    return result;
+}
+
+// Test your function
+console.log(solution());`,
+                'java': `// Java Solution
+public class Solution {
+    public static void main(String[] args) {
+        // Your code here
+        System.out.println(solution());
+    }
+    
+    public static int solution() {
+        // Your code here
+        return 0;
+    }
+}`,
+                'cpp': `// C++ Solution
+#include <iostream>
+
+int solution() {
+    // Your code here
+    return 0;
+}
+
+int main() {
+    std::cout << solution() << std::endl;
+    return 0;
+}`,
+                'csharp': `// C# Solution
+using System;
+
+class Solution {
+    static void Main() {
+        Console.WriteLine(SolutionMethod());
+    }
+    
+    static int SolutionMethod() {
+        // Your code here
+        return 0;
+    }
+}`
+              };
+              session.codingState.boilerplateCode = boilerplates[message.language.toLowerCase()] || boilerplates['python'];
+            }
+            
+            // Mark submitted code on the session
+            this.codingManager.updateCodingState(session, message.code || '', true);
+
+            // Immediately attempt dual-stream invocation with explicit submission
+            await this.codingManager.checkDualStreamInvocation(
+              ws,
+              session,
+              this.agentHandler.sendToAgent.bind(this.agentHandler),
+              message.text,
+              message.code,
+              message.language,
+              message.explanation,
+              this.audioManager.synthesizeAndSendAudio.bind(this.audioManager)
+            );
+          } else {
+            await this.messageProcessor.processCodeInput(
+              ws,
+              session,
+              message.text!,
+              message.code,
+              message.language,
+              message.explanation,
+              this.agentHandler.sendToAgent.bind(this.agentHandler),
+              this.audioManager.synthesizeAndSendAudio.bind(this.audioManager)
+            );
+          }
           break;
           
         case 'code_keystroke':
