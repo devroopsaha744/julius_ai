@@ -18,13 +18,24 @@ export class CodingManager {
       // mark typing state and submitted state
       session.codingState.isTyping = !isFinalSubmission;
       // Set hasTyped only if code content differs from boilerplate
+      // defensive: ensure boilerplateCode is at least an empty string
+      session.codingState.boilerplateCode = session.codingState.boilerplateCode || '';
       const hasChangedFromBoilerplate = code.trim() !== session.codingState.boilerplateCode.trim();
       if (!isFinalSubmission) {
         session.codingState.hasTyped = hasChangedFromBoilerplate;
       }
       session.codingState.isSubmitted = !!isFinalSubmission;
       
-      if (session.codingState.keystrokeTimer) clearTimeout(session.codingState.keystrokeTimer);
+      // Reset existing keystroke debounce timer and set a new one so we can mark typing=false shortly after input stops.
+      if (session.codingState.keystrokeTimer) {
+        clearTimeout(session.codingState.keystrokeTimer);
+        session.codingState.keystrokeTimer = undefined;
+      }
+
+      session.codingState.keystrokeTimer = setTimeout(() => {
+        session.codingState.isTyping = false;
+        session.codingState.keystrokeTimer = undefined;
+      }, this.KEYSTROKE_DEBOUNCE);
     }
   }
 
@@ -73,8 +84,10 @@ export class CodingManager {
   const hasNewCode = session.codingState.hasNewCode;
   const hasNewContent = hasNewSpeech || hasNewCode;
     
-    // Determine if submitted code exists (only submitted code should be forwarded)
-    const codeSubmittedAvailable = !!(session.codingState.isSubmitted && session.codingState.codeContent && session.codingState.codeContent.length > 0);
+  // Editor-based comparison: check whether the editor content differs from the current boilerplate
+  const editorHasContent = !!(session.codingState.codeContent && session.codingState.codeContent.length > 0);
+  const editorDiffersFromBoilerplate = editorHasContent && session.codingState.codeContent.trim() !== session.codingState.boilerplateCode.trim();
+  const isSubmitted = !!session.codingState.isSubmitted;
 
     let shouldInvoke = false;
 
@@ -86,22 +99,21 @@ export class CodingManager {
 
     const hasTyped = session.codingState.hasTyped;
 
-    console.log(`[CodingManager] Checking invocation: speechIdle=${speechIdle}, codeIdle=${codeIdle}, hasNewSpeech=${hasNewSpeech}, hasNewCode=${hasNewCode}, codeSubmittedAvailable=${codeSubmittedAvailable}, hasTyped=${hasTyped}, text=${!!text}`);
+  console.log(`[CodingManager] Checking invocation: speechIdle=${speechIdle}, codeIdle=${codeIdle}, hasNewSpeech=${hasNewSpeech}, hasNewCode=${hasNewCode}, isSubmitted=${isSubmitted}, editorDiffersFromBoilerplate=${editorDiffersFromBoilerplate}, hasTyped=${hasTyped}, text=${!!text}`);
     
-    // Explicit submission always triggers (if code present)
-    if (text && codeSubmittedAvailable) {
+    // RULE: If the editor content differs from boilerplate, only invoke when the user explicitly SUBMITS
+    if (isSubmitted && editorDiffersFromBoilerplate) {
       shouldInvoke = true;
     }
 
-    // If user has not typed yet, allow speech-only endpointing to trigger invocation
-    else if (!hasTyped && speechIdle && (hasNewSpeech || codeSubmittedAvailable)) {
+    // If the editor content does NOT differ from boilerplate (i.e., user hasn't touched editor),
+    // allow VAD-based invocation when speech endpointing occurs.
+    else if (!editorDiffersFromBoilerplate && !hasTyped && speechIdle && hasNewSpeech) {
       shouldInvoke = true;
     }
 
-    // If user has not typed yet and code is idle, allow submitted code to trigger even without speech
-    else if (!hasTyped && codeIdle && hasNewCode && codeSubmittedAvailable && session.speechState.speechContent.length === 0) {
-      shouldInvoke = true;
-    }
+    // Edge: If no editor changes and code is idle (and no speech), but there was an explicit submit with no changes,
+    // do NOT treat submit as a code invocation. Rely on VAD behavior instead.
 
     // Otherwise, DO NOT invoke while typing is active unless explicit submission occurs above
     console.log(`[CodingManager] shouldInvoke=${shouldInvoke}`);
@@ -112,8 +124,9 @@ export class CodingManager {
 
       this.sendResponse(ws, { type: 'llm_processing_started' });
 
-      // Only forward submitted code; if code present but not submitted, withhold content and only note draft presence
-      const codeToSend = session.codingState.isSubmitted ? (code || session.codingState.codeContent) : undefined;
+  // Only forward submitted code that differs from the boilerplate; if code present but not submitted, withhold content and only note draft presence
+  // Build codeToSend only when editor actually differs from boilerplate and submit flag is present
+  const codeToSend = (isSubmitted && editorDiffersFromBoilerplate) ? (code || session.codingState.codeContent) : undefined;
       const fullMessage = this.createComprehensiveMessage(session, text, codeToSend, language, explanation);
 
       // Reset 'hasNew' flags but retain isSubmitted until after successful invocation
@@ -136,9 +149,10 @@ export class CodingManager {
       if (session.codingState.isSubmitted) {
         session.codingState.isSubmitted = false;
         session.codingState.submittedAt = undefined;
-        session.codingState.hasTyped = false; // Reset hasTyped after submit
-        // Update boilerplate to the submitted code for future comparisons
+        // Reset hasTyped only if we actually forwarded new code
         if (codeToSend) {
+          session.codingState.hasTyped = false; // Reset hasTyped after submit
+          // Update boilerplate to the submitted code for future comparisons
           session.codingState.boilerplateCode = codeToSend;
         }
       }

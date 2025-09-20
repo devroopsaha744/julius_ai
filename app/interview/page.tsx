@@ -47,6 +47,8 @@ export default function InterviewInterface() {
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportData, setReportData] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   const clientRef = useRef<InterviewWebSocketClient | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -868,42 +870,109 @@ export default function InterviewInterface() {
           </div>
 
           {/* Report Data */}
-          {reportData && (
-            <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
-              <h3 className="text-lg font-semibold electric-text mb-4">Interview Results</h3>
-              
-              {reportData.scoring && (
-                <div className="mb-4">
-                  <div className="glass-effect rounded-lg p-4 bg-gradient-to-r from-green-900/20 to-cyan-900/20 border border-green-400/30">
-                    <div className="flex items-center space-x-3">
-                      <div className="text-3xl font-bold text-green-400 electric-glow">
-                        {reportData.scoring.overall.final_score}/100
-                      </div>
-                      <div>
-                        <div className="text-sm text-gray-300 font-medium">Overall Score</div>
-                        <div className="text-xs text-cyan-400">
-                          Recommendation: {reportData.scoring.overall.recommendation}
+          <div className="mb-4">
+            {/* Button to view / generate report for current session */}
+            <div className="glass-effect rounded-xl border border-gray-800/50 p-3 mb-3">
+              <h3 className="text-sm font-semibold electric-text mb-2">Interview Report</h3>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={async () => {
+                    if (!state.sessionId || !state.resumeFilePath) {
+                      setReportError('Session ID or resume not available. Upload resume and ensure you are connected.');
+                      return;
+                    }
+                    setReportError(null);
+                    setReportLoading(true);
+                    try {
+                      const res = await generateReport(state.sessionId, state.resumeFilePath, 'full');
+                      setReportData(res);
+                    } catch (err: any) {
+                      setReportError(err?.message || 'Failed to generate report');
+                    } finally {
+                      setReportLoading(false);
+                    }
+                  }}
+                  className="btn-electric px-3 py-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!state.sessionId || !state.resumeFilePath || reportLoading}
+                >
+                  {reportLoading ? (
+                    <span className="flex items-center space-x-2">
+                      <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                      </svg>
+                      <span>Preparing report...</span>
+                    </span>
+                  ) : (
+                    'View Report'
+                  )}
+                </button>
+
+                <button
+                  onClick={() => { setReportData(null); setReportError(null); }}
+                  className="btn-outline-electric px-3 py-2 text-sm"
+                >
+                  Clear
+                </button>
+              </div>
+              {reportError && <div className="text-xs text-red-400 mt-2">{reportError}</div>}
+            </div>
+
+            {reportData && (
+              <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
+                <h3 className="text-lg font-semibold electric-text mb-4">Interview Results</h3>
+
+                {reportData.scoring && (
+                  <div className="mb-4">
+                    <div className="glass-effect rounded-lg p-4 bg-gradient-to-r from-green-900/20 to-cyan-900/20 border border-green-400/30">
+                      <div className="flex items-center space-x-3">
+                        <div className="text-3xl font-bold text-green-400 electric-glow">
+                          {reportData.scoring.overall.final_score}/100
+                        </div>
+                        <div>
+                          <div className="text-sm text-gray-300 font-medium">Overall Score</div>
+                          <div className="text-xs text-cyan-400">Recommendation: {reportData.scoring.overall.recommendation}</div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-              
-              {reportData.recommendation && (
-                <div className="glass-effect rounded-lg p-3 border border-cyan-400/20">
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                    <div className="text-sm text-cyan-300 font-medium">
-                      {reportData.recommendation.recommendations.length} feedback categories available
+                )}
+
+                {reportData.recommendation && (
+                  <div className="glass-effect rounded-lg p-3 border border-cyan-400/20">
+                    <h4 className="text-sm font-medium text-cyan-300 mb-2">Recommendations</h4>
+                    <div className="space-y-3">
+                      {reportData.recommendation.recommendations.map((r: any, idx: number) => (
+                        <div key={idx} className="p-3 bg-black/40 border border-cyan-800 rounded-md">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-white">{r.category}</div>
+                              <div className="text-xs text-gray-400 mt-1">{r.overallSummary}</div>
+                            </div>
+                          </div>
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-300">
+                            <div>
+                              <div className="font-medium text-cyan-300">Strengths</div>
+                              <ul className="list-disc pl-4 mt-1">{r.strengths.map((s: string, i: number) => <li key={i}>{s}</li>)}</ul>
+                            </div>
+                            <div>
+                              <div className="font-medium text-yellow-300">Areas to Improve</div>
+                              <ul className="list-disc pl-4 mt-1">{r.areasOfImprovement.map((s: string, i: number) => <li key={i}>{s}</li>)}</ul>
+                            </div>
+                            <div>
+                              <div className="font-medium text-green-300">Actionable Tips</div>
+                              <ul className="list-disc pl-4 mt-1">{r.actionableTips.map((s: string, i: number) => <li key={i}>{s}</li>)}</ul>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="text-xs text-gray-400">Final Advice: {reportData.recommendation.finalAdvice}</div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Error Display */}
           {error && (

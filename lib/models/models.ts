@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const InterviewStepSchema = z.object({
   assistant_message: z.string(),
+  state: z.string(),
   substate: z.string()
 });
 
