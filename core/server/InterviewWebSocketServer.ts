@@ -61,7 +61,8 @@ export class InterviewWebSocketServer {
             ws,
             session,
             this.agentHandler.sendToAgent.bind(this.agentHandler),
-            this.audioManager.synthesizeAndSendAudio.bind(this.audioManager)
+            this.audioManager.synthesizeAndSendAudio.bind(this.audioManager),
+            this.codingManager.checkDualStreamInvocation.bind(this.codingManager) // allow AudioManager to trigger coding VAD immediately
           );
           break;
           
@@ -186,6 +187,18 @@ class Solution {
           break;
           
         case 'stage_change':
+          // Initialize boilerplate code when entering coding stage
+          if (message.stage === 'coding' && !session.codingState.boilerplateCode) {
+            const defaultBoilerplate = `# Python Solution
+def solution():
+    # Your code here
+    return result
+
+# Test your function
+print(solution())`;
+            session.codingState.boilerplateCode = defaultBoilerplate;
+            console.log(`[WS_SERVER DEBUG] Initialized boilerplate code for coding stage`);
+          }
           this.codingManager.handleStageChange(session, message.stage!);
           break;
           
@@ -220,7 +233,12 @@ class Solution {
     await this.codingManager.checkDualStreamInvocation(
       ws,
       session,
-      this.agentHandler.sendToAgent.bind(this.agentHandler)
+      this.agentHandler.sendToAgent.bind(this.agentHandler),
+      undefined, // text
+      code,      // code
+      language,  // language
+      undefined, // explanation
+      this.audioManager.synthesizeAndSendAudio.bind(this.audioManager) // TTS callback - was missing!
     );
   }
 

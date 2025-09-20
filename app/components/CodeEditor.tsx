@@ -1,7 +1,26 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import './CodeEditor.css';
+
+// Dynamically import Monaco Editor to avoid SSR issues
+const Editor = dynamic(() => import('@monaco-editor/react'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-96 bg-gray-800 rounded">
+      <div className="text-white">Loading Monaco Editor...</div>
+    </div>
+  ),
+});
+
+// Import monaco types dynamically
+let monaco: typeof import('monaco-editor') | null = null;
+if (typeof window !== 'undefined') {
+  import('monaco-editor').then((monacoModule) => {
+    monaco = monacoModule;
+  });
+}
 
 interface CodeEditorProps {
   value: string;
@@ -13,16 +32,16 @@ interface CodeEditorProps {
 }
 
 const LANGUAGES = [
-  { id: 'javascript', name: 'JavaScript', ext: '.js' },
-  { id: 'python', name: 'Python', ext: '.py' },
-  { id: 'java', name: 'Java', ext: '.java' },
-  { id: 'cpp', name: 'C++', ext: '.cpp' },
-  { id: 'c', name: 'C', ext: '.c' },
-  { id: 'csharp', name: 'C#', ext: '.cs' },
-  { id: 'go', name: 'Go', ext: '.go' },
-  { id: 'rust', name: 'Rust', ext: '.rs' },
-  { id: 'typescript', name: 'TypeScript', ext: '.ts' },
-  { id: 'sql', name: 'SQL', ext: '.sql' },
+  { id: 'javascript', name: 'JavaScript', ext: '.js', monacoId: 'javascript' },
+  { id: 'python', name: 'Python', ext: '.py', monacoId: 'python' },
+  { id: 'java', name: 'Java', ext: '.java', monacoId: 'java' },
+  { id: 'cpp', name: 'C++', ext: '.cpp', monacoId: 'cpp' },
+  { id: 'c', name: 'C', ext: '.c', monacoId: 'c' },
+  { id: 'csharp', name: 'C#', ext: '.cs', monacoId: 'csharp' },
+  { id: 'go', name: 'Go', ext: '.go', monacoId: 'go' },
+  { id: 'rust', name: 'Rust', ext: '.rs', monacoId: 'rust' },
+  { id: 'typescript', name: 'TypeScript', ext: '.ts', monacoId: 'typescript' },
+  { id: 'sql', name: 'SQL', ext: '.sql', monacoId: 'sql' },
 ];
 
 const CODE_TEMPLATES = {
@@ -152,16 +171,21 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
   const [explanation, setExplanation] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fontSize, setFontSize] = useState(14);
-  const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [changeCount, setChangeCount] = useState(0);
+  const [lastSavedValue, setLastSavedValue] = useState(value);
   
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<any>(null);
   const keystrokeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Track changes for easy change detection
+  const hasUnsavedChanges = value !== lastSavedValue;
+
   // Keystroke tracking with debounce
-  const handleKeystroke = (newValue: string) => {
-    onChange(newValue);
+  const handleEditorChange = (newValue: string | undefined) => {
+    const currentValue = newValue || '';
+    onChange(currentValue);
+    setChangeCount(prev => prev + 1);
     
     if (onKeystroke) {
       // Clear existing timeout
@@ -171,7 +195,7 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
       
       // Debounce keystroke events (300ms delay for immediate feedback)
       keystrokeTimeoutRef.current = setTimeout(() => {
-        onKeystroke(newValue, selectedLanguage);
+        onKeystroke(currentValue, selectedLanguage);
       }, 300);
     }
   };
@@ -179,35 +203,50 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
   // Initialize with template when language changes
   useEffect(() => {
     if (!value || value.trim() === '') {
-      onChange(CODE_TEMPLATES[selectedLanguage as keyof typeof CODE_TEMPLATES] || '');
+      const template = CODE_TEMPLATES[selectedLanguage as keyof typeof CODE_TEMPLATES] || '';
+      onChange(template);
+      setLastSavedValue(template);
     }
   }, [selectedLanguage]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
-    }
-  }, [value]);
+  // Monaco Editor configuration
+  const handleEditorDidMount = (editor: any) => {
+    editorRef.current = editor;
+    
+    // Configure editor options for better indentation and formatting
+    editor.updateOptions({
+      automaticLayout: true,
+      formatOnPaste: true,
+      formatOnType: true,
+      autoIndent: 'full',
+      insertSpaces: true,
+      tabSize: 4,
+      detectIndentation: false,
+      wordWrap: 'on',
+      minimap: { enabled: true },
+      scrollBeyondLastLine: false,
+      renderWhitespace: 'selection',
+      bracketPairColorization: { enabled: true },
+      guides: {
+        indentation: true,
+        bracketPairs: true
+      }
+    });
 
-  // Handle tab key for indentation
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = e.currentTarget.selectionStart;
-      const end = e.currentTarget.selectionEnd;
-      const newValue = value.substring(0, start) + '    ' + value.substring(end);
-      onChange(newValue);
-      
-      // Set cursor position after the inserted tab
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 4;
+    // Add keyboard shortcuts - only if monaco is available
+    if (typeof window !== 'undefined' && monaco) {
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+        handleSubmit();
+      });
+
+      // Add auto-formatting on Enter
+      editor.onKeyDown((e: any) => {
+        if (monaco && e.keyCode === monaco.KeyCode.Enter) {
+          setTimeout(() => {
+            editor.getAction('editor.action.formatDocument')?.run();
+          }, 100);
         }
-      }, 0);
-    } else if (e.key === 'Enter' && e.ctrlKey) {
-      handleSubmit();
+      });
     }
   };
 
@@ -221,6 +260,8 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
     try {
       await onSubmit(value, selectedLanguage, explanation);
       setExplanation('');
+      setLastSavedValue(value);
+      setChangeCount(0);
     } finally {
       setIsSubmitting(false);
     }
@@ -234,12 +275,16 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
     const template = CODE_TEMPLATES[selectedLanguage as keyof typeof CODE_TEMPLATES];
     if (template) {
       onChange(template);
+      setLastSavedValue(template);
+      setChangeCount(0);
     }
   };
 
   const clearCode = () => {
     if (confirm('Are you sure you want to clear all code?')) {
       onChange('');
+      setLastSavedValue('');
+      setChangeCount(0);
     }
   };
 
@@ -248,9 +293,14 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
     // You could add a toast notification here
   };
 
-  const getLineNumbers = () => {
-    const lines = value.split('\n');
-    return lines.map((_, index) => index + 1).join('\n');
+  const formatCode = () => {
+    if (editorRef.current) {
+      editorRef.current.getAction('editor.action.formatDocument')?.run();
+    }
+  };
+
+  const getCurrentLanguage = () => {
+    return LANGUAGES.find(lang => lang.id === selectedLanguage);
   };
 
   const editorClasses = `
@@ -258,14 +308,51 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
     ${className}
   `;
 
+  const editorOptions = {
+    fontSize: fontSize,
+    theme: 'vs-dark',
+    automaticLayout: true,
+    formatOnPaste: true,
+    formatOnType: true,
+    autoIndent: 'full' as const,
+    insertSpaces: true,
+    tabSize: 4,
+    detectIndentation: false,
+    wordWrap: 'on' as const,
+    minimap: { enabled: !isFullscreen },
+    scrollBeyondLastLine: false,
+    renderWhitespace: 'selection' as const,
+    bracketPairColorization: { enabled: true },
+    guides: {
+      indentation: true,
+      bracketPairs: true
+    },
+    readOnly: disabled,
+    lineNumbers: 'on' as const,
+    glyphMargin: true,
+    folding: true,
+    lineDecorationsWidth: 10,
+    lineNumbersMinChars: 3,
+    renderLineHighlight: 'all' as const,
+    cursorBlinking: 'blink' as const,
+    cursorSmoothCaretAnimation: 'on' as const,
+    smoothScrolling: true,
+    contextmenu: true,
+    mouseWheelZoom: true,
+    quickSuggestions: true,
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: 'on' as const,
+    snippetSuggestions: 'top' as const
+  };
+
   return (
-    <div ref={containerRef} className={`code-editor-container ${editorClasses}`}>
+    <div className={`code-editor-container ${editorClasses}`}>
       <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden code-editor-transition">
         {/* Header */}
         <div className="bg-gray-800 border-b border-gray-700 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-4">
-              <h3 className="text-lg font-semibold text-blue-400">Code Editor</h3>
+              <h3 className="text-lg font-semibold text-blue-400">Monaco Code Editor</h3>
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-gray-400">Language:</span>
                 <select
@@ -281,6 +368,12 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
                   ))}
                 </select>
               </div>
+              {hasUnsavedChanges && (
+                <div className="flex items-center space-x-1 text-yellow-400">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                  <span className="text-xs">Unsaved changes</span>
+                </div>
+              )}
             </div>
             
             <div className="flex items-center space-x-2">
@@ -301,14 +394,14 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
                 </button>
               </div>
               
-              {/* Line Numbers Toggle */}
+              {/* Format Code Button */}
               <button
-                onClick={() => setShowLineNumbers(!showLineNumbers)}
-                className={`px-2 py-1 rounded text-xs transition-colors ${
-                  showLineNumbers ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
-                }`}
+                onClick={formatCode}
+                disabled={disabled}
+                className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 text-white text-xs rounded transition-colors"
+                title="Format Code (Ctrl+Shift+F)"
               >
-                #
+                Format
               </button>
               
               {/* Fullscreen Toggle */}
@@ -359,49 +452,25 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
               <span>•</span>
               <span>Chars: {value.length}</span>
               <span>•</span>
+              <span>Changes: {changeCount}</span>
+              <span>•</span>
               <span>Ctrl+Enter to submit</span>
             </div>
           </div>
         </div>
 
-        {/* Code Area */}
+        {/* Monaco Editor */}
         <div className="relative">
-          <div className="flex" style={{ height: isFullscreen ? 'calc(100vh - 200px)' : '400px' }}>
-            {/* Line Numbers */}
-            {showLineNumbers && (
-              <div 
-                className="bg-gray-850 border-r border-gray-700 px-2 py-3 text-gray-500 text-right select-none overflow-hidden"
-                style={{ 
-                  fontSize: `${fontSize}px`,
-                  lineHeight: '1.5',
-                  fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, source-code-pro, monospace'
-                }}
-              >
-                <pre className="whitespace-pre">{getLineNumbers()}</pre>
-              </div>
-            )}
-            
-            {/* Code Input */}
-            <div className="flex-1 relative">
-              <textarea
-                ref={textareaRef}
-                value={value}
-                onChange={(e) => handleKeystroke(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={`// Write your ${LANGUAGES.find(l => l.id === selectedLanguage)?.name || 'code'} solution here...\n// Press Tab for indentation\n// Press Ctrl+Enter to submit`}
-                disabled={disabled}
-                className="code-editor-textarea w-full h-full bg-gray-800 text-white placeholder-gray-500 resize-none focus:outline-none border-none p-3 overflow-auto"
-                style={{ 
-                  fontSize: `${fontSize}px`,
-                  lineHeight: '1.5',
-                  fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, source-code-pro, monospace',
-                  minHeight: isFullscreen ? 'calc(100vh - 200px)' : '400px'
-                }}
-                spellCheck={false}
-              />
-              
-              {/* Syntax highlighting overlay could go here */}
-            </div>
+          <div style={{ height: isFullscreen ? 'calc(100vh - 280px)' : '400px' }}>
+            <Editor
+              height="100%"
+              language={getCurrentLanguage()?.monacoId || 'javascript'}
+              value={value}
+              onChange={handleEditorChange}
+              onMount={handleEditorDidMount}
+              options={editorOptions}
+              theme="vs-dark"
+            />
           </div>
         </div>
 
@@ -422,8 +491,11 @@ export default function CodeEditor({ value, onChange, onSubmit, onKeystroke, dis
         {/* Submit Button */}
         <div className="bg-gray-800 border-t border-gray-700 p-4">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-400">
-              💡 Tip: Explain your approach above and write clean, commented code
+            <div className="text-xs text-gray-400 flex items-center space-x-4">
+              <span>💡 Tip: Use Ctrl+Shift+F to format code automatically</span>
+              {hasUnsavedChanges && (
+                <span className="text-yellow-400">⚠️ You have unsaved changes</span>
+              )}
             </div>
             <button
               onClick={handleSubmit}

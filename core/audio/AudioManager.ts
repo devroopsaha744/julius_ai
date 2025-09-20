@@ -11,7 +11,18 @@ export class AudioManager {
     ws: WebSocket,
     session: InterviewSession,
     sendToAgent?: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string) => Promise<any>,
-    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>
+    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>,
+    checkCodingInvocation?: (
+      ws: WebSocket,
+      session: InterviewSession,
+      sendToAgent: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string, codeSubmitted?: boolean, options?: { minimal?: boolean }) => Promise<any>,
+      text?: string,
+      code?: string,
+      language?: string,
+      explanation?: string,
+      synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>,
+      forceSpeechFinal?: boolean
+    ) => Promise<void>
   ): Promise<void> {
     if (session.isTranscribing) return;
     
@@ -50,7 +61,7 @@ export class AudioManager {
 
           if (session.silenceTimer) clearTimeout(session.silenceTimer);
           session.silenceTimer = setTimeout(() => {
-            this.processSilence(ws, session, sendToAgent, synthesizeAudio);
+            this.processSilence(ws, session, sendToAgent, synthesizeAudio, checkCodingInvocation);
           }, parseInt(process.env.SILENCE_TIMEOUT || '2000'));
         } catch (e) {
           console.error('[AudioManager] Error in transcript callback:', e);
@@ -65,7 +76,8 @@ export class AudioManager {
       (utterance) => {
         // Deepgram reported utterance end / speech_final — process immediately
         try {
-          this.processSilence(ws, session, sendToAgent, synthesizeAudio);
+          // Force immediate coding-stage VAD evaluation
+          this.processSilence(ws, session, sendToAgent, synthesizeAudio, checkCodingInvocation);
         } catch (e) {
           console.error('[AudioManager] Error processing utterance end:', e);
         }
@@ -168,18 +180,46 @@ export class AudioManager {
     ws: WebSocket,
     session: InterviewSession,
     sendToAgent?: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string) => Promise<any>,
-    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>
+    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>,
+    checkCodingInvocation?: (
+      ws: WebSocket,
+      session: InterviewSession,
+      sendToAgent: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string) => Promise<any>,
+      text?: string,
+      code?: string,
+      language?: string,
+      explanation?: string,
+      synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>,
+      forceSpeechFinal?: boolean
+    ) => Promise<void>
   ): Promise<void> {
     if (!session.currentTranscript.trim()) return;
 
     const text = session.currentTranscript.trim();
     console.log(`🔇 Silence detected. Processing transcript: "${text}"`);
     
-    // For coding stage, update speech state and check dual-stream invocation
+    // For coding stage, update speech state and immediately ask CodingManager to evaluate VAD rules
     if (session.isInCodingStage) {
       this.updateSpeechState(session, text, true);
       session.currentTranscript = '';
-      // This will be handled by the CodingManager
+      if (checkCodingInvocation && sendToAgent) {
+        try {
+          // Pass forceSpeechFinal=true to ensure invocation does not wait for idle timers
+          await checkCodingInvocation(
+            ws,
+            session,
+            sendToAgent,
+            undefined,    // text
+            undefined,    // code
+            undefined,    // language
+            undefined,    // explanation
+            synthesizeAudio,
+            true          // forceSpeechFinal
+          );
+        } catch (err) {
+          console.error('[AudioManager] Error invoking coding VAD handler:', err);
+        }
+      }
     } else {
       // Normal behavior for non-coding stages
       console.log('[AudioManager] Emitting final_transcript:', text);

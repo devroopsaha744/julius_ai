@@ -1,46 +1,156 @@
-/* Code Editor Styles */
+/* Monaco Code Editor Styles */
 .code-editor-container {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
 }
 
-.code-editor-textarea {
-  font-family: inherit;
-  tab-size: 4;
-  -moz-tab-size: 4;
+/* Monaco Editor Container Overrides */
+.monaco-editor {
+  border-radius: 0 !important;
 }
 
-.code-editor-textarea::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.monaco-editor .margin {
+  background-color: #1f2937 !important;
 }
 
-.code-editor-textarea::-webkit-scrollbar-track {
-  background: #374151;
-  border-radius: 4px;
+.monaco-editor .monaco-editor-background {
+  background-color: #1f2937 !important;
 }
 
-.code-editor-textarea::-webkit-scrollbar-thumb {
-  background: #6b7280;
-  border-radius: 4px;
+.monaco-editor .current-line {
+  background-color: rgba(255, 255, 255, 0.05) !important;
 }
 
-.code-editor-textarea::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+/* Scrollbar styling for Monaco Editor */
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  background: rgba(107, 114, 128, 0.5) !important;
+  border-radius: 4px !important;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: rgba(156, 163, 175, 0.7) !important;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar {
+  background: rgba(55, 65, 81, 0.3) !important;
+}
+
+/* Minimap styling */
+.monaco-editor .minimap {
+  background-color: #111827 !important;
+}
+
+.monaco-editor .minimap-slider {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+.monaco-editor .minimap-slider:hover {
+  background-color: rgba(59, 130, 246, 0.5) !important;
 }
 
 /* Line numbers styling */
-.line-numbers {
-  user-select: none;
-  pointer-events: none;
-  color: #6b7280;
-  background-color: #1f2937;
-  border-right: 1px solid #374151;
-  padding: 12px 8px;
-  text-align: right;
-  white-space: pre;
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
+.monaco-editor .line-numbers {
+  color: #6b7280 !important;
+  background-color: #1f2937 !important;
+}
+
+.monaco-editor .current-line ~ .line-numbers {
+  color: #9ca3af !important;
+}
+
+/* Bracket pair colorization */
+.monaco-editor .bracket-highlighting-0 {
+  color: #fbbf24 !important;
+}
+
+.monaco-editor .bracket-highlighting-1 {
+  color: #34d399 !important;
+}
+
+.monaco-editor .bracket-highlighting-2 {
+  color: #60a5fa !important;
+}
+
+.monaco-editor .bracket-highlighting-3 {
+  color: #f472b6 !important;
+}
+
+.monaco-editor .bracket-highlighting-4 {
+  color: #a78bfa !important;
+}
+
+.monaco-editor .bracket-highlighting-5 {
+  color: #fb7185 !important;
+}
+
+/* Indentation guides */
+.monaco-editor .lines-content .cigr {
+  box-shadow: 1px 0 0 0 rgba(107, 114, 128, 0.3) inset !important;
+}
+
+.monaco-editor .lines-content .cigra {
+  box-shadow: 1px 0 0 0 rgba(59, 130, 246, 0.6) inset !important;
+}
+
+/* Selection styling */
+.monaco-editor .selected-text {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+.monaco-editor .focused .selected-text {
+  background-color: rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Find widget styling */
+.monaco-editor .find-widget {
+  background-color: #374151 !important;
+  border: 1px solid #4b5563 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.monaco-editor .find-widget .monaco-inputbox {
+  background-color: #1f2937 !important;
+  border: 1px solid #4b5563 !important;
+}
+
+.monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
+  border-color: #3b82f6 !important;
+}
+
+/* Suggest widget styling */
+.monaco-editor .suggest-widget {
+  background-color: #374151 !important;
+  border: 1px solid #4b5563 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+  background-color: transparent !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Context menu styling */
+.monaco-menu {
+  background-color: #374151 !important;
+  border: 1px solid #4b5563 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+}
+
+.monaco-menu .monaco-action-bar .action-item .action-label {
+  color: #f3f4f6 !important;
+}
+
+.monaco-menu .monaco-action-bar .action-item .action-label:hover {
+  background-color: rgba(59, 130, 246, 0.1) !important;
 }
 
 /* Fullscreen styles */
@@ -56,28 +166,13 @@
   margin: 0;
 }
 
-.code-editor-fullscreen .code-editor-textarea {
-  height: calc(100vh - 200px) !important;
-  min-height: calc(100vh - 200px) !important;
+.code-editor-fullscreen .monaco-editor {
+  height: calc(100vh - 280px) !important;
 }
 
 /* Animation for transitions */
 .code-editor-transition {
   transition: all 0.3s ease-in-out;
-}
-
-/* Syntax highlighting placeholder (for future enhancement) */
-.syntax-highlight {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 1;
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  white-space: pre;
-  color: transparent;
 }
 
 /* Loading spinner */
@@ -93,6 +188,20 @@
   100% { transform: rotate(360deg); }
 }
 
+/* Change indicator pulse animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .code-editor-container {
@@ -102,21 +211,84 @@
   .code-editor-fullscreen {
     padding: 8px;
   }
+  
+  .monaco-editor {
+    font-size: 12px !important;
+  }
 }
 
 /* Focus states */
-.code-editor-textarea:focus {
+.monaco-editor.focused {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 1px #3b82f6;
 }
 
 /* Error states */
-.code-editor-error {
+.code-editor-error .monaco-editor {
   border-color: #ef4444;
 }
 
-.code-editor-error:focus {
+.code-editor-error .monaco-editor.focused {
   border-color: #ef4444;
   box-shadow: 0 0 0 1px #ef4444;
+}
+
+/* Custom Monaco Editor theme overrides */
+.monaco-editor .mtk1 { color: #f3f4f6; } /* Default text */
+.monaco-editor .mtk2 { color: #6b7280; } /* Comments */
+.monaco-editor .mtk3 { color: #34d399; } /* Strings */
+.monaco-editor .mtk4 { color: #fbbf24; } /* Numbers */
+.monaco-editor .mtk5 { color: #60a5fa; } /* Keywords */
+.monaco-editor .mtk6 { color: #f472b6; } /* Operators */
+.monaco-editor .mtk7 { color: #a78bfa; } /* Functions */
+.monaco-editor .mtk8 { color: #fb7185; } /* Variables */
+
+/* Hover widget styling */
+.monaco-editor .monaco-hover {
+  background-color: #374151 !important;
+  border: 1px solid #4b5563 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.monaco-editor .monaco-hover .hover-contents {
+  color: #f3f4f6 !important;
+}
+
+/* Parameter hints widget */
+.monaco-editor .parameter-hints-widget {
+  background-color: #374151 !important;
+  border: 1px solid #4b5563 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Diff editor styling (for future use) */
+.monaco-diff-editor .diffOverview {
+  background-color: #1f2937 !important;
+}
+
+.monaco-diff-editor .diff-review-line-number {
+  color: #6b7280 !important;
+}
+
+/* Custom scrollbar for the entire editor container */
+.code-editor-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.code-editor-container::-webkit-scrollbar-track {
+  background: #374151;
+  border-radius: 4px;
+}
+
+.code-editor-container::-webkit-scrollbar-thumb {
+  background: #6b7280;
+  border-radius: 4px;
+}
+
+.code-editor-container::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }

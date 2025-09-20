@@ -46,12 +46,17 @@ export class UnifiedInterviewAgent {
      * @param resumeContent - optional plain-text resume content to include in context
      */
     async run(userMessage: string, userCode?: string, currentState: string = "greet", currentSubstate: string = "greet_intro", resumeContent?: string, codeSubmitted: boolean = false) {
+      console.log(`[UNIFIED_AGENT DEBUG] run called - state: ${currentState}, codeSubmitted: ${codeSubmitted}, userCode: ${userCode ? 'YES' : 'NO'}`);
+      
       // Format and store the user's message. For coding state, if codeSubmitted include code block markers
       let messageContent: string;
       if (currentState === "coding" && codeSubmitted && userCode) {
-        messageContent = `<transcripts>\n${userMessage}\n</transcripts>\n\n<code>\n${userCode}\n</code>`;
+        // Format as requested: <transcription> followed by code: <code on editor>
+        messageContent = `<transcription>\n${userMessage}\n</transcription>\n\ncode: ${userCode}`;
+        console.log(`[UNIFIED_AGENT DEBUG] Formatted message with code for coding state`);
       } else {
         messageContent = userMessage;
+        console.log(`[UNIFIED_AGENT DEBUG] Using plain message (no code formatting)`);
       }
       await addMessage(this.sessionId, "user", messageContent);
 
@@ -75,6 +80,8 @@ export class UnifiedInterviewAgent {
 
       const aiMessage = completion.choices[0].message.parsed as InterviewStep | null;
       if (!aiMessage) throw new Error("Failed to parse AI response for interview step");
+
+      console.log(`[UNIFIED_AGENT DEBUG] AI response - state: ${aiMessage.state}, message: ${aiMessage.assistant_message?.substring(0, 50)}...`);
 
       // Store assistant reply (assistant_message only)
       await addMessage(this.sessionId, "assistant", aiMessage.assistant_message);

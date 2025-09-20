@@ -62,61 +62,58 @@ export class CodingManager {
   async checkDualStreamInvocation(
     ws: WebSocket,
     session: InterviewSession,
-    sendToAgent: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string) => Promise<any>,
+  sendToAgent: (ws: WebSocket, session: InterviewSession, text: string, userCode?: string, codeSubmitted?: boolean, options?: { minimal?: boolean }) => Promise<any>,
     text?: string,
     code?: string,
     language?: string,
     explanation?: string,
-    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>
+    synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>,
+    forceSpeechFinal?: boolean
   ): Promise<void> {
-    if (!session.isInCodingStage || session.invocationState.pendingInvocation) return;
+    if (!session.isInCodingStage || session.invocationState.pendingInvocation) {
+      console.log(`[CODING DEBUG] Skipping invocation check - isInCodingStage: ${session.isInCodingStage}, pendingInvocation: ${session.invocationState.pendingInvocation}`);
+      return;
+    }
     
     const now = Date.now();
     const timeSinceLastInvocation = now - session.invocationState.lastInvocation;
-    if (timeSinceLastInvocation < 1000) return;
+    if (timeSinceLastInvocation < 1000) {
+      console.log(`[CODING DEBUG] Skipping - too soon since last invocation: ${timeSinceLastInvocation}ms`);
+      return;
+    }
     
-    const speechIdle = !session.speechState.isSpeaking && 
-                      (now - session.speechState.lastSpeech) > this.SPEECH_SILENCE_THRESHOLD;
-    const codeIdle = !session.codingState.isTyping && 
-                    (now - session.codingState.lastKeystroke) > this.CODE_IDLE_THRESHOLD;
+    // Simple logic: Check if code differs from boilerplate
+    const currentCode = session.codingState.codeContent || '';
+    const boilerplateCode = session.codingState.boilerplateCode || '';
+    const hasCodeChanges = currentCode.trim() !== boilerplateCode.trim();
+    const isSubmitted = !!session.codingState.isSubmitted;
+    const hasTranscript = !!(session.speechState.speechContent.trim() || text?.trim());
+    const speechFinalTriggered = !!forceSpeechFinal;
     
-  const hasNewSpeech = session.speechState.hasNewSpeech;
-  const hasNewCode = session.codingState.hasNewCode;
-  const hasNewContent = hasNewSpeech || hasNewCode;
+    console.log(`[CODING DEBUG] Simple invocation check:
+    - hasCodeChanges: ${hasCodeChanges}
+    - isSubmitted: ${isSubmitted}
+    - hasTranscript: ${hasTranscript}
+    - speechFinalTriggered: ${speechFinalTriggered}
+    - currentCode length: ${currentCode.length}
+    - boilerplateCode length: ${boilerplateCode.length}`);
     
-  // Editor-based comparison: check whether the editor content differs from the current boilerplate
-  const editorHasContent = !!(session.codingState.codeContent && session.codingState.codeContent.length > 0);
-  const editorDiffersFromBoilerplate = editorHasContent && session.codingState.codeContent.trim() !== session.codingState.boilerplateCode.trim();
-  const isSubmitted = !!session.codingState.isSubmitted;
-
     let shouldInvoke = false;
-
-    // RULES:
-    // 1) If user has not typed yet (hasTyped=false), speech-only uses VAD
-    //    -> speechIdle triggers invocation with transcript-only or transcript+submitted-code
-    // 2) If user has typed (hasTyped=true), only invoke on explicit Submit
-    //    -> no auto-invocation during typing, only on submit
-
-    const hasTyped = session.codingState.hasTyped;
-
-  console.log(`[CodingManager] Checking invocation: speechIdle=${speechIdle}, codeIdle=${codeIdle}, hasNewSpeech=${hasNewSpeech}, hasNewCode=${hasNewCode}, isSubmitted=${isSubmitted}, editorDiffersFromBoilerplate=${editorDiffersFromBoilerplate}, hasTyped=${hasTyped}, text=${!!text}`);
+    let invokeReason = '';
     
-    // RULE: If the editor content differs from boilerplate, only invoke when the user explicitly SUBMITS
-    if (isSubmitted && editorDiffersFromBoilerplate) {
+    // RULE 1: If NO code changes, use VAD-based invocation (like other stages)
+    if (!hasCodeChanges && hasTranscript && speechFinalTriggered) {
       shouldInvoke = true;
+      invokeReason = 'VAD triggered - no code changes';
     }
-
-    // If the editor content does NOT differ from boilerplate (i.e., user hasn't touched editor),
-    // allow VAD-based invocation when speech endpointing occurs.
-    else if (!editorDiffersFromBoilerplate && !hasTyped && speechIdle && hasNewSpeech) {
+    
+    // RULE 2: If there ARE code changes, only invoke on SUBMIT button click
+    else if (hasCodeChanges && isSubmitted && hasTranscript) {
       shouldInvoke = true;
+      invokeReason = 'Submit button clicked with code changes';
     }
-
-    // Edge: If no editor changes and code is idle (and no speech), but there was an explicit submit with no changes,
-    // do NOT treat submit as a code invocation. Rely on VAD behavior instead.
-
-    // Otherwise, DO NOT invoke while typing is active unless explicit submission occurs above
-    console.log(`[CodingManager] shouldInvoke=${shouldInvoke}`);
+    
+    console.log(`[CODING DEBUG] Decision: shouldInvoke=${shouldInvoke}, reason=${invokeReason}`);
     
     if (shouldInvoke) {
       session.invocationState.pendingInvocation = true;
@@ -124,88 +121,100 @@ export class CodingManager {
 
       this.sendResponse(ws, { type: 'llm_processing_started' });
 
-  // Only forward submitted code that differs from the boilerplate; if code present but not submitted, withhold content and only note draft presence
-  // Build codeToSend only when editor actually differs from boilerplate and submit flag is present
-  const codeToSend = (isSubmitted && editorDiffersFromBoilerplate) ? (code || session.codingState.codeContent) : undefined;
-      const fullMessage = this.createComprehensiveMessage(session, text, codeToSend, language, explanation);
+      // Prepare the message - ONLY transcript and code (if submitted with changes)
+      const transcript = session.speechState.speechContent.trim() || text?.trim() || '';
+      let messageToAgent = transcript;
+      let uiPayload = '';
 
-      // Reset 'hasNew' flags but retain isSubmitted until after successful invocation
+      // If code was submitted with changes, include it
+      if (hasCodeChanges && isSubmitted) {
+        const codeToSend = code || currentCode;
+        messageToAgent = transcript; // send only transcript as input text, code passed separately
+        uiPayload = `<transcription>\n${transcript}\n</transcription>\n\ncode: ${codeToSend}`;
+
+        console.log(`[CODING DEBUG] Sending transcript + code to agent (minimal mode)`);
+        const result = await sendToAgent(ws, session, messageToAgent, codeToSend, true, { minimal: true });
+
+        // Update boilerplate code after successful submission
+        session.codingState.boilerplateCode = codeToSend;
+        session.codingState.isSubmitted = false;
+        session.codingState.hasTyped = false;
+        console.log(`[CODING DEBUG] Updated boilerplate code and reset submission state`);
+
+        // Send ONLY the formatted transcript+code back to UI
+        this.sendResponse(ws, {
+          type: 'final_transcript',
+          transcript: uiPayload
+        });
+
+        // In coding-stage minimal mode we intentionally DO NOT synthesize or send assistant text/audio
+        // to keep the response limited to the transcript + code only.
+      } else {
+        // VAD path - only transcript
+        console.log(`[CODING DEBUG] Sending transcript only to agent (minimal mode)`);
+        uiPayload = `<transcription>\n${transcript}\n</transcription>`;
+        const result = await sendToAgent(ws, session, messageToAgent, undefined, false, { minimal: true });
+
+        // Send ONLY the formatted transcript back to UI
+        this.sendResponse(ws, {
+          type: 'final_transcript',
+          transcript: uiPayload
+        });
+
+        // In coding-stage minimal mode we intentionally DO NOT synthesize or send assistant text/audio
+        // to keep the response limited to the transcript only.
+      }
+
+      // Reset states
       session.speechState.hasNewSpeech = false;
       session.codingState.hasNewCode = false;
-
-      this.sendResponse(ws, {
-        type: 'final_transcript',
-        transcript: fullMessage
-      });
-
-      const result = await sendToAgent(ws, session, fullMessage, codeToSend);
-      
-      // Synthesize audio for the assistant's response if TTS is provided
-      if (synthesizeAudio && result && result.response && result.response.assistant_message) {
-        await synthesizeAudio(ws, session, result.response.assistant_message);
-      }
-
-      // After agent processed an explicit submitted invocation, clear submitted flag so subsequent typing behaves normally
-      if (session.codingState.isSubmitted) {
-        session.codingState.isSubmitted = false;
-        session.codingState.submittedAt = undefined;
-        // Reset hasTyped only if we actually forwarded new code
-        if (codeToSend) {
-          session.codingState.hasTyped = false; // Reset hasTyped after submit
-          // Update boilerplate to the submitted code for future comparisons
-          session.codingState.boilerplateCode = codeToSend;
-        }
-      }
-
       session.invocationState.pendingInvocation = false;
+      
       this.sendResponse(ws, { type: 'llm_processing_finished' });
-    } else {
-      if (!session.invocationState.invocationTimer) {
-        session.invocationState.invocationTimer = setTimeout(() => {
-          session.invocationState.invocationTimer = undefined;
-          this.checkDualStreamInvocation(ws, session, sendToAgent);
-        }, Math.min(this.SPEECH_SILENCE_THRESHOLD, this.CODE_IDLE_THRESHOLD));
-      }
     }
   }
 
   createComprehensiveMessage(
-    session: InterviewSession, 
-    text?: string, 
-    code?: string, 
-    language?: string, 
+    session: InterviewSession,
+    text?: string,
+    code?: string,
+    language?: string,
     explanation?: string
   ): string {
+    // This method is now deprecated in favor of inline formatting
+    // Keeping for backward compatibility
     let message = '';
     
     if (session.speechState.speechContent.trim()) {
-      message += `Speech: ${session.speechState.speechContent.trim()}\n\n`;
+      message += `${session.speechState.speechContent.trim()}\n\n`;
     }
     
     if (text && text.trim() && text !== session.speechState.speechContent) {
-      message += `Additional Input: ${text.trim()}\n\n`;
+      message += `${text.trim()}\n\n`;
     }
     
-    if (session.codingState.codeContent.trim() || code) {
-      const codeContent = code || session.codingState.codeContent;
-      const lang = language || '';
-      message += 'Code (' + (language || 'unknown') + '):\n';
-      message += '```' + lang + '\n' + codeContent + '\n```\n\n';
+    if (code) {
+      message += `code: ${code}\n\n`;
     }
     
     if (explanation && explanation.trim()) {
-      message += `Explanation: ${explanation.trim()}\n\n`;
+      message += `${explanation.trim()}\n\n`;
     }
     
     return message.trim() || 'No content provided';
   }
 
   resetDualStreamState(session: InterviewSession): void {
-    session.codingState.codeContent = '';
+    // Keep boilerplate code but reset everything else
+    const currentBoilerplate = session.codingState.boilerplateCode;
+    
+    session.codingState.codeContent = currentBoilerplate || '';
     session.codingState.hasNewCode = false;
     session.codingState.isTyping = false;
     session.codingState.hasTyped = false;
     session.codingState.lastKeystroke = 0;
+    session.codingState.isSubmitted = false;
+    session.codingState.submittedAt = undefined;
     
     session.speechState.speechContent = '';
     session.speechState.hasNewSpeech = false;
@@ -241,10 +250,11 @@ export class CodingManager {
     session.isInCodingStage = stage === 'coding';
     
     if (session.isInCodingStage && !wasInCodingStage) {
-      console.log(`🔄 Entering coding stage - Dual-stream tracking enabled`);
+      console.log(`[CODING DEBUG] 🔄 Entering coding stage - Dual-stream tracking enabled`);
+      console.log(`[CODING DEBUG] Initial boilerplate code: ${session.codingState.boilerplateCode?.substring(0, 50) || 'EMPTY'}...`);
       this.resetDualStreamState(session);
     } else if (!session.isInCodingStage && wasInCodingStage) {
-      console.log(`🔄 Exiting coding stage - Dual-stream tracking disabled`);
+      console.log(`[CODING DEBUG] 🔄 Exiting coding stage - Dual-stream tracking disabled`);
       this.cleanupDualStreamTimers(session);
     }
   }

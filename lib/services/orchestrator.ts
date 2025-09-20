@@ -96,6 +96,8 @@ export class InterviewOrchestrator {
       case InterviewStage.BEHAVIORAL:
         // Only pass userCode during CODING stage AND when the user explicitly submitted code
         const codeToPass = (this.currentStage === InterviewStage.CODING && codeSubmitted) ? userCode : undefined;
+        
+        console.log(`[ORCHESTRATOR DEBUG] Stage: ${this.currentStage}, codeSubmitted: ${codeSubmitted}, codeToPass: ${codeToPass ? 'YES' : 'NO'}`);
 
         // Run the agent for the current state
         // Note: UnifiedInterviewAgent.run signature: (userMessage, userCode?, currentState?, currentSubstate?, resumeContent?, codeSubmitted?)
@@ -105,8 +107,10 @@ export class InterviewOrchestrator {
           this.getstateForStage(this.currentStage),
           this.getstateForStage(this.currentStage),
           resumeContent,
-          codeSubmitted
+          codeSubmitted && this.currentStage === InterviewStage.CODING // Only pass codeSubmitted flag during coding stage
         );
+        
+        console.log(`[ORCHESTRATOR DEBUG] Agent response received. State: ${response.state}, Message: ${response.assistant_message?.substring(0, 50)}...`);
 
         // Validate state returned by agent
         const allowedstates = ['greet','resume','coding','cs','behave','wrap_up','end'];
@@ -117,12 +121,14 @@ export class InterviewOrchestrator {
 
         // If the unified agent returns state 'end', trigger scoring & recommendation (if resume provided)
         if (response.state === 'end') {
+          console.log(`[ORCHESTRATOR DEBUG] State 'end' detected - triggering scoring & recommendation`);
           if (!resumeFilePath) {
             throw new Error('Resume file path is required to generate scoring and recommendation when interview ends');
           }
           const [scoring, recommendation] = await this.activateScoringAndRecommendation(resumeFilePath);
           scoringResult = scoring || undefined;
           recommendationResult = recommendation || undefined;
+          console.log(`[ORCHESTRATOR DEBUG] Scoring result: ${scoringResult ? 'SUCCESS' : 'FAILED'}, Recommendation result: ${recommendationResult ? 'SUCCESS' : 'FAILED'}`);
           this.currentStage = InterviewStage.COMPLETED;
           break;
         }
@@ -130,6 +136,7 @@ export class InterviewOrchestrator {
         // Otherwise update stage based on returned state
         const newStage = this.getStageForstate(response.state);
         if (newStage !== this.currentStage) {
+          console.log(`[ORCHESTRATOR DEBUG] Stage transition: ${this.currentStage} -> ${newStage}`);
           this.currentStage = newStage;
 
           // Fire-and-forget follow-up generation to avoid blocking the client response
@@ -137,6 +144,7 @@ export class InterviewOrchestrator {
           void (async () => {
             try {
               const followUpPrompt = `Stage changed to ${this.getstateForStage(this.currentStage)}. Please ask one concise, stage-appropriate question or give a prompt relevant ONLY to this new state.`;
+              console.log(`[ORCHESTRATOR DEBUG] Generating follow-up for new stage: ${this.currentStage}`);
               const followUp = await this.unifiedAgent.run(
                 followUpPrompt,
                 undefined,
@@ -148,10 +156,10 @@ export class InterviewOrchestrator {
               if (followUp && allowedstates.includes(followUp.state)) {
                 // Note: In a real implementation, you'd need to push this followUp to the client via WebSocket
                 // For now, we just generate it asynchronously without blocking
-                console.log(`Generated async follow-up for stage ${this.currentStage}: ${followUp.assistant_message}`);
+                console.log(`[ORCHESTRATOR DEBUG] Generated async follow-up for stage ${this.currentStage}: ${followUp.assistant_message}`);
               }
             } catch (err) {
-              console.warn('Failed to generate stage-entry follow-up:', err);
+              console.warn('[ORCHESTRATOR DEBUG] Failed to generate stage-entry follow-up:', err);
             }
           })();
         }
@@ -168,8 +176,9 @@ export class InterviewOrchestrator {
           resumeContent,
           false
         );
-        // Special handling for wrapup stage - check for "closing" state
-        if (response.state === "closing") {
+        // Special handling for wrapup stage - check for "closing" or "end" state
+        if (response.state === "closing" || response.state === "end") {
+          console.log(`[ORCHESTRATOR DEBUG] Wrapup stage ending - triggering scoring & recommendation`);
           // Activate scoring and recommendation in parallel at the end of wrap up
           if (!resumeFilePath) {
             throw new Error('Resume file path is required for scoring and recommendation stage');
@@ -195,13 +204,17 @@ export class InterviewOrchestrator {
         throw new Error(`Unknown interview stage: ${this.currentStage}`);
     }
 
-    return {
+    const result = {
       response,
       currentStage: this.currentStage,
       stageChanged: previousStage !== this.currentStage,
       ...(scoringResult && { scoringResult }),
       ...(recommendationResult && { recommendationResult })
     };
+    
+    console.log(`[ORCHESTRATOR DEBUG] Returning result - Stage: ${result.currentStage}, Changed: ${result.stageChanged}, Has Scoring: ${!!result.scoringResult}, Has Recommendation: ${!!result.recommendationResult}`);
+    
+    return result;
   }
 
   private shouldMoveToNextStage(response: InterviewStep): boolean {
@@ -245,21 +258,24 @@ export class InterviewOrchestrator {
   }
 
   private async activateScoringAndRecommendation(resumeFilePath: string): Promise<[InterviewScoring | null, InterviewRecommendation | null]> {
+    console.log(`[ORCHESTRATOR DEBUG] activateScoringAndRecommendation called with resume: ${resumeFilePath}`);
     try {
       // Run scoring and recommendation in parallel
+      console.log(`[ORCHESTRATOR DEBUG] Starting parallel scoring and recommendation generation...`);
       const [scoringResult, recommendationResult] = await Promise.all([
         this.scoringAgent.run("Please provide comprehensive scoring for this interview.", resumeFilePath),
         this.recommendationAgent.run("Please provide detailed recommendations and actionable feedback for this interview.", resumeFilePath)
       ]);
 
-      console.log(`Interview completed for candidate: ${scoringResult.candidate_id}`);
-      console.log(`Final Score: ${scoringResult.overall.final_score}/100`);
-      console.log(`Recommendation: ${scoringResult.overall.recommendation}`);
-      console.log(`Number of feedback categories: ${recommendationResult.recommendations.length}`);
+      console.log(`[ORCHESTRATOR DEBUG] Scoring and recommendation generation completed`);
+      console.log(`[ORCHESTRATOR DEBUG] Interview completed for candidate: ${scoringResult.candidate_id}`);
+      console.log(`[ORCHESTRATOR DEBUG] Final Score: ${scoringResult.overall.final_score}/100`);
+      console.log(`[ORCHESTRATOR DEBUG] Recommendation: ${scoringResult.overall.recommendation}`);
+      console.log(`[ORCHESTRATOR DEBUG] Number of feedback categories: ${recommendationResult.recommendations.length}`);
 
       return [scoringResult, recommendationResult];
     } catch (error) {
-      console.error('Error generating score and recommendations:', error);
+      console.error('[ORCHESTRATOR DEBUG] Error generating score and recommendations:', error);
       return [null, null];
     }
   }

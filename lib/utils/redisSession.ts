@@ -3,14 +3,24 @@ import { randomUUID } from "crypto";
 import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
-const redis = new Redis({
-  host: process.env.REDIS_HOST || 'redis-17022.c273.us-east-1-2.ec2.redns.redis-cloud.com',
-  port: Number(process.env.REDIS_PORT) || 17022,
-  username: process.env.REDIS_USERNAME || 'default',
-  password: process.env.REDIS_PASSWORD || '4kqPwKhKnQYQVernPOMkQL01VhuA9KVJ',
-  maxRetriesPerRequest: 3,
-  lazyConnect: true,
-});
+// Prefer a single REDIS_URL if provided, otherwise read individual env vars.
+const redisConnection = process.env.REDIS_URL
+  ? process.env.REDIS_URL
+  : {
+      host: process.env.REDIS_HOST,
+      port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : undefined,
+      username: process.env.REDIS_USERNAME,
+      password: process.env.REDIS_PASSWORD,
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+    };
+
+// Minimal validation and helpful logging if Redis is not configured.
+if (!process.env.REDIS_URL && !process.env.REDIS_HOST) {
+  console.warn('Redis not fully configured: set REDIS_URL or REDIS_HOST (+ REDIS_PORT/USERNAME/PASSWORD) in .env.local');
+}
+
+const redis = typeof redisConnection === 'string' ? new Redis(redisConnection) : new Redis(redisConnection as any);
 
 redis.on('error', (err) => {
   console.error('Redis connection error:', err.message);
