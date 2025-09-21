@@ -139,29 +139,13 @@ export class InterviewOrchestrator {
           console.log(`[ORCHESTRATOR DEBUG] Stage transition: ${this.currentStage} -> ${newStage}`);
           this.currentStage = newStage;
 
-          // Fire-and-forget follow-up generation to avoid blocking the client response
-          // This makes stage transitions immediate, with follow-up appearing asynchronously
-          void (async () => {
-            try {
-              const followUpPrompt = `Stage changed to ${this.getstateForStage(this.currentStage)}. Please ask one concise, stage-appropriate question or give a prompt relevant ONLY to this new state.`;
-              console.log(`[ORCHESTRATOR DEBUG] Generating follow-up for new stage: ${this.currentStage}`);
-              const followUp = await this.unifiedAgent.run(
-                followUpPrompt,
-                undefined,
-                this.getstateForStage(this.currentStage),
-                this.getstateForStage(this.currentStage),
-                resumeContent,
-                false
-              );
-              if (followUp && allowedstates.includes(followUp.state)) {
-                // Note: In a real implementation, you'd need to push this followUp to the client via WebSocket
-                // For now, we just generate it asynchronously without blocking
-                console.log(`[ORCHESTRATOR DEBUG] Generated async follow-up for stage ${this.currentStage}: ${followUp.assistant_message}`);
-              }
-            } catch (err) {
-              console.warn('[ORCHESTRATOR DEBUG] Failed to generate stage-entry follow-up:', err);
-            }
-          })();
+          // FOLLOW-UP GENERATION REMOVED
+          // Previously the orchestrator launched a fire-and-forget agent run here to generate a
+          // stage-entry follow-up prompt. That behavior caused extra latency during state changes
+          // and has been intentionally removed.
+          //
+          // If stage-entry follow-ups are desired in the future, enqueue a job to a background
+          // worker or job queue (e.g., Redis + BullMQ) rather than calling the agent inline here.
         }
 
         break;

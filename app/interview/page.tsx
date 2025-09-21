@@ -233,6 +233,94 @@ export default function InterviewInterface() {
         console.debug('Transcription blocked (silently):', data?.message);
       });
 
+      client.on('stop_recording', (data: any) => {
+        console.log('Server requested to stop recording:', data?.message);
+        if (mediaRecorderRef.current) {
+          mediaRecorderRef.current.stop();
+          mediaRecorderRef.current = null;
+        }
+        setState(prev => ({ ...prev, isTranscribing: false }));
+      });
+
+      client.on('start_recording', (data: any) => {
+        console.log('Server requested to start recording:', data?.message);
+        // Always attempt to start recording when server requests it, regardless of current state
+        // The server knows when TTS has finished and it's safe to record again
+        setTimeout(() => {
+          // Inline the startTranscription logic here since we can't call it directly
+          (async () => {
+            try {
+              console.log('🎤 Starting audio capture...');
+              
+              // Request microphone access with specific audio constraints
+              const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                  sampleRate: 16000,
+                  channelCount: 1
+                } 
+              });
+              
+              console.log('✅ Microphone access granted');
+              
+              // Create AudioContext for audio processing
+              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+                sampleRate: 16000
+              });
+              
+              const source = audioContext.createMediaStreamSource(stream);
+              const processor = audioContext.createScriptProcessor(4096, 1, 1);
+              
+              let isProcessing = true;
+              
+              // Process audio data and send to server
+              processor.onaudioprocess = (event) => {
+                if (!isProcessing || !clientRef.current) return;
+                
+                const inputData = event.inputBuffer.getChannelData(0);
+                
+                // Convert Float32Array to Int16Array (PCM 16-bit)
+                const pcmData = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                  const sample = Math.max(-1, Math.min(1, inputData[i]));
+                  pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                }
+                
+                // Send PCM data to server
+                clientRef.current.sendAudioChunk(pcmData.buffer);
+              };
+              
+              source.connect(processor);
+              processor.connect(audioContext.destination);
+              
+              // Store cleanup function
+              mediaRecorderRef.current = {
+                stream,
+                stop: () => {
+                  console.log('🔇 Stopping audio capture...');
+                  isProcessing = false;
+                  stream.getTracks().forEach(track => track.stop());
+                  processor.disconnect();
+                  source.disconnect();
+                  audioContext.close();
+                }
+              } as any;
+
+              // Start transcription on server
+              clientRef.current?.startTranscription();
+              setState(prev => ({ ...prev, isTranscribing: true }));
+              addSystemMessage('🎤 Voice recording started - speak now!');
+              
+            } catch (error) {
+              console.error('❌ Microphone access error:', error);
+              setError('Microphone access denied. Please allow microphone access and try again.');
+            }
+          })();
+        }, 500); // Small delay to ensure clean transition
+      });
+
       // Add a connection timeout
       const connectionTimeout = setTimeout(() => {
         if (!clientRef.current?.isConnected()) {

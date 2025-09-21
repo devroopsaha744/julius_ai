@@ -1,5 +1,5 @@
 import { DeepgramSTTService } from '../../lib/utils/deepgramSTT';
-import { textToSpeechBuffer } from '../../lib/utils/elevenlabsTTS';
+// import { textToSpeechBuffer } from '../../lib/utils/elevenlabsTTS'; // Commented out - using browser TTS only
 import type { InterviewSession } from '../interview/InterviewSession';
 import type { WebSocketResponse } from '../types/SessionTypes';
 import WebSocket from 'ws';
@@ -36,9 +36,15 @@ export class AudioManager {
 
     const deepgram = session.deepgramService as DeepgramSTTService;
     
-  deepgram.setCallbacks(
-  (transcript: string, isFinal: boolean) => {
+    deepgram.setCallbacks(
+      (transcript: string, isFinal: boolean) => {
         try {
+          // If the assistant is currently playing audio, ignore any transcripts to avoid loopback
+          if (session.invocationState && session.invocationState.audioPlaybackActive) {
+            console.log('[AudioManager] Ignoring transcript while audioPlaybackActive to prevent TTS->STT loopback');
+            return;
+          }
+
           if (!transcript.trim()) return;
 
           // Debug log to ensure transcripts are received and being emitted to clients
@@ -76,6 +82,12 @@ export class AudioManager {
       (utterance) => {
         // Deepgram reported utterance end / speech_final — process immediately
         try {
+          // If audio playback is active, ignore utterance end events triggered by TTS loopback
+          if (session.invocationState && session.invocationState.audioPlaybackActive) {
+            console.log('[AudioManager] Ignoring utterance end while audioPlaybackActive');
+            return;
+          }
+
           // Force immediate coding-stage VAD evaluation
           this.processSilence(ws, session, sendToAgent, synthesizeAudio, checkCodingInvocation);
         } catch (e) {
@@ -105,12 +117,12 @@ export class AudioManager {
 
   async stopDeepgramTranscription(ws: WebSocket, session: InterviewSession): Promise<void> {
     session.isTranscribing = false;
-    
+
     if (session.silenceTimer) {
       clearTimeout(session.silenceTimer);
       session.silenceTimer = undefined;
     }
-    
+
     if (session.deepgramService) {
       try {
         await session.deepgramService.disconnect();
@@ -119,15 +131,33 @@ export class AudioManager {
       }
       session.deepgramService = null as any;
     }
-    
+
     this.sendResponse(ws, {
       type: 'transcription_stopped'
+    });
+  }
+
+  async handleAudioPlaybackFinished(ws: WebSocket, session: InterviewSession): Promise<void> {
+    console.log('[AudioManager] Client notified audio playback finished');
+    session.invocationState.audioPlaybackActive = false;
+
+    // Notify client that transcription is no longer blocked
+    this.sendResponse(ws, {
+      type: 'transcription_unblocked',
+      message: 'Audio playback finished - transcription resumed'
+    });
+
+    // Restart client-side recording after TTS playback
+    this.sendResponse(ws, {
+      type: 'start_recording',
+      message: 'Restarting recording after TTS playback finished'
     });
   }
 
   async processAudioChunk(ws: WebSocket, session: InterviewSession, audioChunk: Buffer): Promise<void> {
     // If the assistant is playing audio, block STT to prevent loopback
     if (session.invocationState && session.invocationState.audioPlaybackActive) {
+      console.log('[AudioManager] STT blocked - TTS audio is playing, dropping audio chunk to prevent feedback loop');
       // Optionally keep a small buffer or drop the chunk
       // Notify client that transcription is blocked while TTS is playing
       try {
@@ -152,26 +182,32 @@ export class AudioManager {
   async synthesizeAndSendAudio(ws: WebSocket, session: InterviewSession, text: string): Promise<void> {
     try {
       this.sendResponse(ws, { type: 'generating_audio' });
-      
-      const buffer = await textToSpeechBuffer(text);
+
+      // Use browser TTS instead of ElevenLabs
+      console.log('[AudioManager] Using browser TTS for audio synthesis');
+
+      // Set audioPlaybackActive just before sending audio to minimize blocking window
       session.invocationState.audioPlaybackActive = true;
-      
-      this.sendResponse(ws, {
-        type: 'audio_response',
-        audio: buffer.toString('base64'),
-        text: text
-      });
-      
+      console.log('[AudioManager] Browser TTS initiated, blocking STT to prevent feedback loop');
+
+      // Stop client-side recording during TTS playback
+      this.sendResponse(ws, { type: 'stop_recording', message: 'Stopping recording during TTS playback' });
+
+      // Send browser TTS command to client
+      this.sendResponse(ws, { type: 'speak_text', text });
       this.sendResponse(ws, { type: 'audio_playback_started' });
+
+      // Note: We no longer use timeout-based reset here. The client will notify us when TTS actually finishes.
+
     } catch (error) {
-      console.error('TTS failure:', error);
-      // Fallback: instruct client to use browser TTS (speechSynthesis)
+      console.error('Browser TTS error:', error);
+      // No fallback needed since we're already using browser TTS
       try {
-        session.invocationState.audioPlaybackActive = true;
-        this.sendResponse(ws, { type: 'speak_text', text });
-        this.sendResponse(ws, { type: 'audio_playback_started' });
+        // Reset the flag if there was an error
+        session.invocationState.audioPlaybackActive = false;
+        console.log('[AudioManager] Reset audioPlaybackActive due to TTS error');
       } catch (err) {
-        console.error('Error sending client-side TTS fallback:', err);
+        console.error('Error resetting audioPlaybackActive:', err);
       }
     }
   }

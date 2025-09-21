@@ -252,7 +252,9 @@ Client → Server
 Server → Client
 
 - `connected`: session id and confirmation
-- `transcription_started` / `transcription_stopped` / `transcription_blocked`
+- `transcription_started` / `transcription_stopped` / `transcription_blocked` / `transcription_unblocked`
+- `stop_recording`: server requests client to stop microphone recording (during TTS playback)
+- `start_recording`: server requests client to restart microphone recording (after TTS playback)
 - `partial_transcript`: interim transcripts (isPartial true)
 - `final_transcript`: final assembled transcript (isPartial false)
 - `processing` / `processing_finished`: LLM processing status

@@ -183,7 +183,7 @@ class Solution {
           break;
           
         case 'audio_playback_finished':
-          this.messageProcessor.handleAudioPlaybackFinished(ws, session);
+          await this.audioManager.handleAudioPlaybackFinished(ws, session);
           break;
           
         case 'stage_change':
