@@ -40,25 +40,16 @@ export class UnifiedInterviewAgent {
     /**
      * Run the unified agent.
      * @param userMessage - incoming user message
-     * @param userCode - optional code (only passed when in coding state)
-     * @param currentState - one of 'greet','resume','coding','cs','behave','wrap_up','end'
+     * @param userCode - optional code (not used in current flow)
+     * @param currentState - one of 'greet','resume','cs','behave','wrap_up','end'
      * @param currentSubstate - specific substate within the current state
      * @param resumeContent - optional plain-text resume content to include in context
      */
     async run(userMessage: string, userCode?: string, currentState: string = "greet", currentSubstate: string = "greet_intro", resumeContent?: string, codeSubmitted: boolean = false) {
-      console.log(`[UNIFIED_AGENT DEBUG] run called - state: ${currentState}, codeSubmitted: ${codeSubmitted}, userCode: ${userCode ? 'YES' : 'NO'}`);
+      console.log(`[UNIFIED_AGENT DEBUG] 🚨 run called - state: ${currentState}, codeSubmitted: ${codeSubmitted}, userCode: ${userCode ? 'YES' : 'NO'}`);
       
-      // Format and store the user's message. For coding state, if codeSubmitted include code block markers
-      let messageContent: string;
-      if (currentState === "coding" && codeSubmitted && userCode) {
-        // Format as requested: <transcription> followed by code: <code on editor>
-        messageContent = `<transcription>\n${userMessage}\n</transcription>\n\ncode: ${userCode}`;
-        console.log(`[UNIFIED_AGENT DEBUG] Formatted message with code for coding state`);
-      } else {
-        messageContent = userMessage;
-        console.log(`[UNIFIED_AGENT DEBUG] Using plain message (no code formatting)`);
-      }
-      await addMessage(this.sessionId, "user", messageContent);
+      // Store the user's message
+      await addMessage(this.sessionId, "user", userMessage);
 
       // Retrieve conversation history (we keep full history but instruct model to focus on current state/substate)
       const history = await getMessages(this.sessionId);
@@ -72,11 +63,13 @@ export class UnifiedInterviewAgent {
       ];
 
       // Model call with zod response parsing
+      console.log(`[UNIFIED_AGENT DEBUG] 🚀 MAKING LLM CALL to groqClient`);
       const completion = await groqClient.chat.completions.parse({
         model: "openai/gpt-oss-120b",
         messages,
         response_format: zodResponseFormat(InterviewStepSchema, "interview_step")
       });
+      console.log(`[UNIFIED_AGENT DEBUG] ✅ LLM CALL completed`);
 
       const aiMessage = completion.choices[0].message.parsed as InterviewStep | null;
       if (!aiMessage) throw new Error("Failed to parse AI response for interview step");

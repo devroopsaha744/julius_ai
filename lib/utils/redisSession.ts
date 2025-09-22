@@ -1,6 +1,8 @@
 import Redis from "ioredis";
 import { randomUUID } from "crypto";
 import dotenv from 'dotenv';
+import dbConnect from './mongoConnection';
+import Message from '../models/Message';
 dotenv.config({ path: '.env.local' });
 
 // Prefer a single REDIS_URL if provided, otherwise read individual env vars.
@@ -52,18 +54,20 @@ export async function createSession() {
 }
 
 export async function addMessage(sessionId: string, role: "user" | "assistant", content: string) {
-  await ensureConnection();
-  const key = `session:${sessionId}`;
-  await redis.lpush(key, JSON.stringify({ role, content }));
-  await redis.expire(key, 2 * 60 * 60); // 2 hours TTL
+  await dbConnect();
+  const message = new Message({
+    sessionId,
+    role,
+    content,
+    timestamp: new Date(),
+  });
+  await message.save();
 }
 
 export async function getMessages(sessionId: string) {
-  await ensureConnection();
-  const key = `session:${sessionId}`;
-  const rawMessages = await redis.lrange(key, 0, -1);
-  return rawMessages.reverse().map((msg) => JSON.parse(msg)); 
-  // returns: [{ role: "user", content: "..." }, { role: "assistant", content: "..." }]
+  await dbConnect();
+  const messages = await Message.find({ sessionId }).sort({ timestamp: 1 });
+  return messages.map(msg => ({ role: msg.role, content: msg.content }));
 }
 
 export async function deleteSession(sessionId: string) {

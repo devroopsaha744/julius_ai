@@ -148,3 +148,54 @@ export const InterviewRecommendationSchema = z.object({
 });
 
 export type InterviewRecommendation = z.infer<typeof InterviewRecommendationSchema>;
+
+// Coding Curator Schema
+const ProblemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  difficulty: z.enum(['easy', 'medium', 'hard']),
+  description: z.string(),
+  language: z.string().default('javascript'),
+  input_output_examples: z.array(z.object({
+    input: z.string(),
+    output: z.string()
+  })),
+  test_cases: z.array(z.object({
+    input: z.string(),
+    expected_output: z.string()
+  })),
+  starter_template: z.string().optional()
+});
+
+export const CuratorOutputSchema = z.object({
+  problems: z.array(ProblemSchema)
+});
+
+export type Problem = z.infer<typeof ProblemSchema>;
+export type CuratorOutput = z.infer<typeof CuratorOutputSchema>;
+
+// Coding Evaluator Schema
+const ProblemResultSchema = z.object({
+  id: z.string(),
+  correctness: z.number().min(1).max(10),
+  optimization: z.number().min(1).max(10),
+  readability: z.number().min(1).max(10),
+  feedback: z.string(),
+  passed_tests: z.number(),
+  total_tests: z.number()
+});
+
+const OverallEvaluationSchema = z.object({
+  overall_correctness: z.number().min(1).max(10),
+  overall_optimization: z.number().min(1).max(10),
+  overall_readability: z.number().min(1).max(10),
+  recommendation: z.enum(['pass', 'fail', 'manual_review'])
+});
+
+export const EvaluatorOutputSchema = z.object({
+  results: z.array(ProblemResultSchema),
+  overall: OverallEvaluationSchema
+});
+
+export type ProblemResult = z.infer<typeof ProblemResultSchema>;
+export type EvaluatorOutput = z.infer<typeof EvaluatorOutputSchema>;

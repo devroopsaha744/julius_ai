@@ -8,7 +8,6 @@ import fs from 'fs';
 export enum InterviewStage {
   GREET = 'greet',
   RESUME = 'resume', 
-  CODING = 'coding',
   CS = 'cs',
   BEHAVIORAL = 'behavioral',
   WRAPUP = 'wrapup',
@@ -38,7 +37,6 @@ export class InterviewOrchestrator {
     const stageTostateMap: Record<InterviewStage, string> = {
       [InterviewStage.GREET]: 'greet',
       [InterviewStage.RESUME]: 'resume',
-      [InterviewStage.CODING]: 'coding',
       [InterviewStage.CS]: 'cs',
       [InterviewStage.BEHAVIORAL]: 'behave',
       [InterviewStage.WRAPUP]: 'wrap_up',
@@ -51,7 +49,6 @@ export class InterviewOrchestrator {
     const stateToStageMap: Record<string, InterviewStage> = {
       'greet': InterviewStage.GREET,
       'resume': InterviewStage.RESUME,
-      'coding': InterviewStage.CODING,
       'cs': InterviewStage.CS,
       'behave': InterviewStage.BEHAVIORAL,
       'wrap_up': InterviewStage.WRAPUP,
@@ -91,29 +88,25 @@ export class InterviewOrchestrator {
     switch (this.currentStage) {
       case InterviewStage.GREET:
       case InterviewStage.RESUME:
-      case InterviewStage.CODING:
       case InterviewStage.CS:
       case InterviewStage.BEHAVIORAL:
-        // Only pass userCode during CODING stage AND when the user explicitly submitted code
-        const codeToPass = (this.currentStage === InterviewStage.CODING && codeSubmitted) ? userCode : undefined;
-        
-        console.log(`[ORCHESTRATOR DEBUG] Stage: ${this.currentStage}, codeSubmitted: ${codeSubmitted}, codeToPass: ${codeToPass ? 'YES' : 'NO'}`);
-
         // Run the agent for the current state
         // Note: UnifiedInterviewAgent.run signature: (userMessage, userCode?, currentState?, currentSubstate?, resumeContent?, codeSubmitted?)
+        console.log(`[ORCHESTRATOR DEBUG] 🚀 CALLING unifiedAgent.run for stage: ${this.currentStage}`);
         response = await this.unifiedAgent.run(
           userMessage,
-          codeToPass,
+          undefined,
           this.getstateForStage(this.currentStage),
           this.getstateForStage(this.currentStage),
           resumeContent,
-          codeSubmitted && this.currentStage === InterviewStage.CODING // Only pass codeSubmitted flag during coding stage
+          false
         );
+        console.log(`[ORCHESTRATOR DEBUG] ✅ unifiedAgent.run completed for stage: ${this.currentStage}`);
         
         console.log(`[ORCHESTRATOR DEBUG] Agent response received. State: ${response.state}, Message: ${response.assistant_message?.substring(0, 50)}...`);
 
         // Validate state returned by agent
-        const allowedstates = ['greet','resume','coding','cs','behave','wrap_up','end'];
+        const allowedstates = ['greet','resume','cs','behave','wrap_up','end'];
         if (!allowedstates.includes(response.state)) {
           console.warn(`Agent returned invalid state '${response.state}', coercing to '${this.getstateForStage(this.currentStage)}'`);
           response.state = this.getstateForStage(this.currentStage);
@@ -203,7 +196,7 @@ export class InterviewOrchestrator {
 
   private shouldMoveToNextStage(response: InterviewStep): boolean {
     // We move to the next stage only when the agent explicitly returns a different allowed state
-    const allowed = ['greet','resume','coding','cs','behave','wrap_up','end'];
+    const allowed = ['greet','resume','cs','behave','wrap_up','end'];
     return allowed.includes(response.state) && this.getStageForstate(response.state) !== this.currentStage;
   }
 
@@ -212,8 +205,6 @@ export class InterviewOrchestrator {
       case InterviewStage.GREET:
         return InterviewStage.RESUME;
       case InterviewStage.RESUME:
-        return InterviewStage.CODING;
-      case InterviewStage.CODING:
         return InterviewStage.CS;
       case InterviewStage.CS:
         return InterviewStage.BEHAVIORAL;

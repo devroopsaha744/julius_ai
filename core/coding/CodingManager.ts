@@ -70,15 +70,19 @@ export class CodingManager {
     synthesizeAudio?: (ws: WebSocket, session: InterviewSession, text: string) => Promise<void>,
     forceSpeechFinal?: boolean
   ): Promise<void> {
+    console.log(`[CODING DEBUG] 🚨 checkDualStreamInvocation CALLED - isInCodingStage: ${session.isInCodingStage}, pendingInvocation: ${session.invocationState.pendingInvocation}, text: ${text?.substring(0, 50)}..., code: ${code ? 'YES' : 'NO'}`);
+
     if (!session.isInCodingStage || session.invocationState.pendingInvocation) {
-      console.log(`[CODING DEBUG] Skipping invocation check - isInCodingStage: ${session.isInCodingStage}, pendingInvocation: ${session.invocationState.pendingInvocation}`);
+      console.log(`[CODING DEBUG] ❌ EARLY EXIT - isInCodingStage: ${session.isInCodingStage}, pendingInvocation: ${session.invocationState.pendingInvocation}`);
       return;
     }
     
     const now = Date.now();
     const timeSinceLastInvocation = now - session.invocationState.lastInvocation;
+    console.log(`[CODING DEBUG] ⏰ Time check - timeSinceLastInvocation: ${timeSinceLastInvocation}ms, lastInvocation: ${session.invocationState.lastInvocation}`);
+
     if (timeSinceLastInvocation < 1000) {
-      console.log(`[CODING DEBUG] Skipping - too soon since last invocation: ${timeSinceLastInvocation}ms`);
+      console.log(`[CODING DEBUG] ❌ TIME EXIT - too soon since last invocation: ${timeSinceLastInvocation}ms`);
       return;
     }
     
@@ -87,90 +91,113 @@ export class CodingManager {
     const boilerplateCode = session.codingState.boilerplateCode || '';
     const hasCodeChanges = currentCode.trim() !== boilerplateCode.trim();
     const isSubmitted = !!session.codingState.isSubmitted;
-    const hasTranscript = !!(session.speechState.speechContent.trim() || text?.trim());
+  const speechContentSafe = (session.speechState.speechContent || '').trim();
+  const hasTranscript = !!(speechContentSafe || text?.trim());
     const speechFinalTriggered = !!forceSpeechFinal;
-    
-    console.log(`[CODING DEBUG] Simple invocation check:
-    - hasCodeChanges: ${hasCodeChanges}
+
+    console.log(`[CODING DEBUG] 📊 INVOCATION CONDITIONS:
+    - hasCodeChanges: ${hasCodeChanges} (current: ${currentCode.length}, boilerplate: ${boilerplateCode.length})
     - isSubmitted: ${isSubmitted}
-    - hasTranscript: ${hasTranscript}
+    - hasTranscript: ${hasTranscript} (speech: ${session.speechState.speechContent.trim().length}, text: ${text?.trim().length || 0})
     - speechFinalTriggered: ${speechFinalTriggered}
-    - currentCode length: ${currentCode.length}
-    - boilerplateCode length: ${boilerplateCode.length}`);
+    - isInCodingStage: ${session.isInCodingStage}
+    - pendingInvocation: ${session.invocationState.pendingInvocation}`);
     
     let shouldInvoke = false;
     let invokeReason = '';
-    
+
+    console.log(`[CODING DEBUG] 🎯 EVALUATING INVOCATION RULES:`);
+
     // RULE 1: If NO code changes, use VAD-based invocation (like other stages)
     if (!hasCodeChanges && hasTranscript && speechFinalTriggered) {
       shouldInvoke = true;
       invokeReason = 'VAD triggered - no code changes';
+      console.log(`[CODING DEBUG] ✅ RULE 1 MATCHED: ${invokeReason}`);
     }
-    
-    // RULE 2: If there ARE code changes, only invoke on SUBMIT button click
-    else if (hasCodeChanges && isSubmitted && hasTranscript) {
+
+    // RULE 2: If there ARE code changes, invoke on SUBMIT button click even if no speech transcript is present
+    else if (hasCodeChanges && isSubmitted) {
       shouldInvoke = true;
-      invokeReason = 'Submit button clicked with code changes';
+      invokeReason = 'Submit button clicked with code changes (transcript optional)';
+      console.log(`[CODING DEBUG] ✅ RULE 2 MATCHED: ${invokeReason}`);
     }
-    
-    console.log(`[CODING DEBUG] Decision: shouldInvoke=${shouldInvoke}, reason=${invokeReason}`);
+    else {
+      console.log(`[CODING DEBUG] ❌ NO RULES MATCHED:`);
+      console.log(`  - Rule 1 failed: hasCodeChanges=${hasCodeChanges}, hasTranscript=${hasTranscript}, speechFinalTriggered=${speechFinalTriggered}`);
+      console.log(`  - Rule 2 failed: hasCodeChanges=${hasCodeChanges}, isSubmitted=${isSubmitted}, hasTranscript=${hasTranscript}`);
+    }
+
+    console.log(`[CODING DEBUG] 🎯 FINAL DECISION: shouldInvoke=${shouldInvoke}, reason=${invokeReason}`);
     
     if (shouldInvoke) {
+      console.log(`[CODING DEBUG] 🚀 INVOCATION STARTED - About to call sendToAgent`);
       session.invocationState.pendingInvocation = true;
       session.invocationState.lastInvocation = now;
 
       this.sendResponse(ws, { type: 'llm_processing_started' });
 
       // Prepare the message - ONLY transcript and code (if submitted with changes)
-      const transcript = session.speechState.speechContent.trim() || text?.trim() || '';
+      const transcript = speechContentSafe || text?.trim() || '';
       let messageToAgent = transcript;
       let uiPayload = '';
 
-      // If code was submitted with changes, include it
-      if (hasCodeChanges && isSubmitted) {
-        const codeToSend = code || currentCode;
-        messageToAgent = transcript; // send only transcript as input text, code passed separately
-        uiPayload = `<transcription>\n${transcript}\n</transcription>\n\ncode: ${codeToSend}`;
+      try {
+        // If code was submitted with changes, include it
+        if (hasCodeChanges && isSubmitted) {
+          const codeToSend = code || currentCode;
+          messageToAgent = transcript; // send only transcript as input text, code passed separately
+          uiPayload = `<transcription>\n${transcript}\n</transcription>\n\ncode: ${codeToSend}`;
 
-        console.log(`[CODING DEBUG] Sending transcript + code to agent (minimal mode)`);
-        const result = await sendToAgent(ws, session, messageToAgent, codeToSend, true, { minimal: true });
+          console.log(`[CODING DEBUG] 🚀 CALLING sendToAgent with transcript + code (minimal mode)`);
+          const result = await sendToAgent(ws, session, messageToAgent, codeToSend, true, { minimal: true });
+          console.log(`[CODING DEBUG] ✅ sendToAgent completed for transcript + code`);
 
-        // Update boilerplate code after successful submission
-        session.codingState.boilerplateCode = codeToSend;
-        session.codingState.isSubmitted = false;
-        session.codingState.hasTyped = false;
-        console.log(`[CODING DEBUG] Updated boilerplate code and reset submission state`);
+          // Update boilerplate code after successful submission
+          session.codingState.boilerplateCode = codeToSend;
+          session.codingState.isSubmitted = false;
+          session.codingState.hasTyped = false;
+          console.log(`[CODING DEBUG] Updated boilerplate code and reset submission state`);
 
-        // Send ONLY the formatted transcript+code back to UI
-        this.sendResponse(ws, {
-          type: 'final_transcript',
-          transcript: uiPayload
-        });
+          // Send ONLY the formatted transcript+code back to UI
+          this.sendResponse(ws, {
+            type: 'final_transcript',
+            transcript: uiPayload
+          });
 
-        // In coding-stage minimal mode we intentionally DO NOT synthesize or send assistant text/audio
-        // to keep the response limited to the transcript + code only.
-      } else {
-        // VAD path - only transcript
-        console.log(`[CODING DEBUG] Sending transcript only to agent (minimal mode)`);
-        uiPayload = `<transcription>\n${transcript}\n</transcription>`;
-        const result = await sendToAgent(ws, session, messageToAgent, undefined, false, { minimal: true });
+          // In coding-stage minimal mode we intentionally DO NOT synthesize or send assistant text/audio
+          // to keep the response limited to the transcript + code only.
+        } else {
+          // VAD path - only transcript
+          console.log(`[CODING DEBUG] 🚀 CALLING sendToAgent with transcript only (VAD path, minimal mode)`);
+          uiPayload = `<transcription>\n${transcript}\n</transcription>`;
+          const result = await sendToAgent(ws, session, messageToAgent, undefined, false, { minimal: true });
+          console.log(`[CODING DEBUG] ✅ sendToAgent completed for transcript only (VAD path)`);
 
-        // Send ONLY the formatted transcript back to UI
-        this.sendResponse(ws, {
-          type: 'final_transcript',
-          transcript: uiPayload
-        });
+          // Send ONLY the formatted transcript back to UI
+          this.sendResponse(ws, {
+            type: 'final_transcript',
+            transcript: uiPayload
+          });
 
-        // In coding-stage minimal mode we intentionally DO NOT synthesize or send assistant text/audio
-        // to keep the response limited to the transcript only.
+          // In coding-stage minimal mode we intentionally DO NOT synthesize or send assistant text/audio
+          // to keep the response limited to the transcript only.
+        }
+      } catch (err) {
+        console.error('[CODING DEBUG] Error during sendToAgent invocation:', err);
+        // Notify UI that processing failed for this invocation
+        this.sendResponse(ws, { type: 'server_error', message: 'LLM invocation failed during coding invocation' });
+      } finally {
+        // Reset states in all cases so we don't permanently block future invocations
+        try {
+          session.speechState.hasNewSpeech = false;
+          session.codingState.hasNewCode = false;
+          session.invocationState.pendingInvocation = false;
+        } catch (e) {
+          console.error('[CODING DEBUG] Error resetting invocation state in finally:', e);
+        }
+
+        this.sendResponse(ws, { type: 'llm_processing_finished' });
       }
-
-      // Reset states
-      session.speechState.hasNewSpeech = false;
-      session.codingState.hasNewCode = false;
-      session.invocationState.pendingInvocation = false;
-      
-      this.sendResponse(ws, { type: 'llm_processing_finished' });
     }
   }
 

@@ -37,6 +37,71 @@ export default function ReportsPage() {
     }
   };
 
+  const loadSampleReport = () => {
+    const sample: ReportData = {
+      type: 'full',
+      generatedAt: new Date().toISOString(),
+      scoring: {
+        overall: {
+          final_score: 78,
+          recommendation: 'Hire',
+          strengths: ['Problem decomposition', 'Clear communication'],
+          weaknesses: ['Edge-case testing', 'Time optimization']
+        },
+        stages: {
+          coding: {
+            score: 8,
+            criteria: {
+              correctness: 8,
+              style: 7,
+              testing: 6
+            },
+            notes: 'Candidate solved the main problem and provided readable code, but missed some corner cases.'
+          },
+          cs: {
+            score: 7,
+            criteria: {
+              algorithms: 7,
+              complexity: 7
+            },
+            notes: 'Good algorithmic understanding; could improve on complexity trade-offs.'
+          },
+          behavioral: {
+            score: 8,
+            criteria: {
+              communication: 8,
+              collaboration: 8
+            },
+            notes: 'Strong communicator and team fit.'
+          }
+        }
+      },
+      recommendation: {
+        recommendations: [
+          {
+            category: 'Technical Skills',
+            strengths: ['Solid fundamentals', 'Good problem solving'],
+            areasOfImprovement: ['Unit testing', 'Performance optimization'],
+            actionableTips: ['Write unit tests for edge cases', 'Consider algorithmic complexity for large inputs'],
+            resources: ['Cracking the Coding Interview', 'LeetCode - Top Interview Questions'],
+            overallSummary: 'Candidate demonstrates strong core technical abilities but should add more thorough testing and optimization.'
+          },
+          {
+            category: 'Communication & Collaboration',
+            strengths: ['Explains thought process clearly'],
+            areasOfImprovement: ['Ask clarifying questions earlier'],
+            actionableTips: ['Practice stating assumptions at the start of the problem'],
+            resources: ['Effective Communication in Tech Teams'],
+            overallSummary: 'Good interpersonal skills and clear explanations.'
+          }
+        ],
+        finalAdvice: 'Overall, recommend hire for mid-level engineering role with mentorship on testing and performance.'
+      }
+    };
+
+    setReportData(sample);
+  };
+
   const renderScoring = (scoring: any) => (
     <div className="bg-gray-900 rounded-lg border border-gray-700 p-6">
       <h3 className="text-2xl font-bold text-blue-400 mb-6">Interview Scoring</h3>
@@ -234,13 +299,23 @@ export default function ReportsPage() {
             </select>
           </div>
           
-          <button
-            onClick={handleGenerateReport}
-            disabled={loading || !sessionId.trim() || !resumeFilePath.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 px-6 py-2 rounded-lg text-white font-medium transition-colors"
-          >
-            {loading ? 'Generating Report...' : 'Generate Report'}
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleGenerateReport}
+              disabled={loading || !sessionId.trim() || !resumeFilePath.trim()}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 px-6 py-2 rounded-lg text-white font-medium transition-colors"
+            >
+              {loading ? 'Generating Report...' : 'Generate Report'}
+            </button>
+
+            <button
+              onClick={loadSampleReport}
+              type="button"
+              className="bg-transparent border border-gray-600 hover:border-blue-500 px-4 py-2 rounded-lg text-white font-medium transition-colors"
+            >
+              Load Sample Report
+            </button>
+          </div>
         </div>
 
         {/* Error Display */}

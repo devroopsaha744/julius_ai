@@ -28,6 +28,7 @@
     "mammoth": "^1.10.0",
     "mic": "^2.1.2",
     "monaco-editor": "^0.53.0",
+    "mongoose": "^8.18.2",
     "next": "15.4.6",
     "openai": "^5.12.2",
     "pdf-parse": "^1.1.1",

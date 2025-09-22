@@ -11,6 +11,8 @@ export class AgentHandler {
     codeSubmitted?: boolean,
     options?: { minimal?: boolean }
   ): Promise<any> {
+    console.log(`[AGENT DEBUG] 🚨 sendToAgent CALLED - minimal=${options?.minimal}, text: ${text?.substring(0, 100)}..., userCode: ${userCode ? 'YES' : 'NO'}, codeSubmitted: ${codeSubmitted}`);
+
     session.invocationState.pendingInvocation = true;
 
     const minimal = options?.minimal === true;
@@ -35,7 +37,9 @@ export class AgentHandler {
         });
       }
 
+      console.log(`[AGENT DEBUG] 🚀 CALLING orchestrator.processMessage`);
       const result = await session.orchestrator.processMessage(text, session.resumeFilePath, userCode, !!codeSubmitted);
+      console.log(`[AGENT DEBUG] ✅ orchestrator.processMessage completed`);
 
       console.log(`[AGENT DEBUG] Orchestrator result - Stage: ${result.currentStage}, Changed: ${result.stageChanged}, Has response: ${!!result.response}`);
 
