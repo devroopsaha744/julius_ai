@@ -16,7 +16,7 @@ export default function CodingPage() {
     setRunning(true);
     setOutput("Running...");
     try {
-      const res = await fetch('/api/judge0', {
+      const res = await fetch('/api/onecompiler', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_code: code, language: language, stdin })

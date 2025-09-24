@@ -468,6 +468,21 @@ export default function InterviewInterface() {
     }
   };
 
+  const startCodingTest = () => {
+    try {
+      // Notify the server/orchestrator to move to coding stage
+      if (clientRef.current) {
+        clientRef.current.sendStageChange('coding');
+      }
+      // Open the coding test (curator) in a new tab so the candidate sees the coding UI
+      window.open('/coding-test/test', '_blank');
+      addSystemMessage('Starting coding test...');
+    } catch (e) {
+      console.error('Failed to start coding test', e);
+      addSystemMessage('Failed to start coding test.');
+    }
+  };
+
   // Helper function to determine microphone state
   const getMicrophoneState = () => {
     if (!state.isConnected) {
@@ -585,12 +600,13 @@ export default function InterviewInterface() {
     setCodeInput('');
   };
 
-  const handleCodeSubmission = async (code: string, language: string, explanation: string) => {
+  const handleCodeSubmission = async (code: string, language: string, explanation?: string) => {
     if (!clientRef.current) return;
     
     // Combine explanation and code into a comprehensive message
-    const fullMessage = explanation.trim() 
-      ? `${explanation}\n\nCode Solution (${language}):\n\`\`\`${language}\n${code}\n\`\`\``
+    const explanationText = (explanation || '').trim();
+    const fullMessage = explanationText
+      ? `${explanationText}\n\nCode Solution (${language}):\n\`\`\`${language}\n${code}\n\`\`\``
       : `Code Solution (${language}):\n\`\`\`${language}\n${code}\n\`\`\``;
     
     // Send through WebSocket with language and explanation metadata
@@ -782,8 +798,6 @@ export default function InterviewInterface() {
                 value={codeInput}
                 onChange={setCodeInput}
                 onSubmit={handleCodeSubmission}
-                onKeystroke={handleCodeKeystroke}
-                disabled={!state.isConnected || state.isProcessing}
                 className="mb-4"
               />
             )}
@@ -871,6 +885,16 @@ export default function InterviewInterface() {
                 <span className="text-sm">Resume uploaded successfully</span>
               </div>
             )}
+              {/* Start Coding Test Button */}
+              <div className="mt-3">
+                <button
+                  onClick={startCodingTest}
+                  disabled={!state.isConnected}
+                  className="w-full btn-outline-electric px-4 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Start Coding Test
+                </button>
+              </div>
           </div>
 
           {/* Interview Progress */}

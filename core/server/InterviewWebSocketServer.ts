@@ -25,7 +25,7 @@ export class InterviewWebSocketServer {
     this.audioManager = new AudioManager();
     this.codingManager = new CodingManager();
     this.messageProcessor = new MessageProcessor();
-    this.agentHandler = new AgentHandler();
+  this.agentHandler = new AgentHandler({ codingManager: this.codingManager });
     
     this.setupServer();
   }

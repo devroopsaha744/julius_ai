@@ -47,6 +47,90 @@ export default function Home() {
     { name: "Wrap-up", status: "pending", description: "Closing & Next Steps" }
   ];
 
+  // Simple client-side user state
+  const [user, setUser] = useState<any>(() => {
+    try {
+      if (typeof window === 'undefined') return null;
+      const raw = localStorage.getItem('julius_user');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    // Load Google Identity Services script
+    if (typeof window === 'undefined') return;
+    const existing = document.getElementById('gsi-script');
+    if (!existing) {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.id = 'gsi-script';
+      s.async = true;
+      s.defer = true;
+      document.body.appendChild(s);
+
+      s.onload = () => {
+        // Safe runtime checks for google identity
+  const g = (window as any).google;
+        if (g && g.accounts && g.accounts.id) {
+          g.accounts.id.initialize({
+            client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+            callback: handleCredentialResponse,
+          });
+          const target = document.getElementById('g_id_onload');
+          if (target) {
+            g.accounts.id.renderButton(target, { theme: 'outline', size: 'large', width: '240' });
+          }
+        }
+      };
+    }
+  }, []);
+
+  async function handleCredentialResponse(response: { credential?: string } | any) {
+    const id_token = response?.credential as string | undefined;
+    if (!id_token) return;
+    try {
+      const r = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_token }),
+      });
+      const data = await r.json();
+      if (data?.ok && data.user) {
+        localStorage.setItem('julius_user', JSON.stringify(data.user));
+        setUser(data.user);
+      } else if (data?.user) {
+        localStorage.setItem('julius_user', JSON.stringify(data.user));
+        setUser(data.user);
+      } else {
+        console.error('Auth failed', data);
+      }
+    } catch (e) {
+      console.error('Auth error', e);
+    }
+  }
+
+  function signOut() {
+    localStorage.removeItem('julius_user');
+    setUser(null);
+  }
+
+  // Inline small user badge component
+  function UserBadge() {
+    if (!user) return null;
+    return (
+      <div className="flex items-center space-x-3">
+        {user.picture && <img src={user.picture} alt="avatar" className="w-8 h-8 rounded-full" />}
+        <div className="text-sm">
+          <div className="font-medium">{user.name || user.email}</div>
+          <div className="text-xs muted">{user.email}</div>
+        </div>
+        <button onClick={signOut} className="text-sm btn-outline px-3 py-1">Sign out</button>
+      </div>
+    );
+  }
+
   return (
   <div className="min-h-screen bg-white text-black overflow-hidden">
       {/* Animated Background */}
@@ -59,8 +143,8 @@ export default function Home() {
       <nav className="relative z-10 px-6 py-4 border-b border-gray-800/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 hero-accent rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xl">J</span>
+            <div className="w-10 h-10 hero-accent rounded-lg flex items-center justify-center overflow-hidden">
+              <img src="/assests/logo.svg" alt="Julius AI" className="w-8 h-8 object-contain" />
             </div>
             <span className="text-2xl font-bold accent-text">Julius AI</span>
           </div>
@@ -70,7 +154,19 @@ export default function Home() {
             <Link href="#process" className="muted hover:text-black transition-colors">Process</Link>
             <Link href="/interview" className="btn-primary">Start Interview</Link>
             <Link href="/coding" className="btn-outline">Recruiter Coding</Link>
+            {/* Google Sign-in area */}
+            {/** Show user if signed in */}
+            {typeof window !== 'undefined' && (
+              <div id="gsi-root" className="flex items-center space-x-4">
+                {localStorage.getItem('julius_user') ? (
+                  <UserBadge />
+                ) : (
+                  <div id="g_id_onload"></div>
+                )}
+              </div>
+            )}
           </div>
+*** End Patch
         </div>
       </nav>
 
@@ -266,8 +362,8 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="col-span-1 md:col-span-2">
               <div className="flex items-center space-x-3 mb-4">
-                <div className="w-10 h-10 hero-accent rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-xl">J</span>
+                <div className="w-10 h-10 hero-accent rounded-lg flex items-center justify-center overflow-hidden">
+                  <img src="/assests/logo.svg" alt="Julius AI" className="w-8 h-8 object-contain" />
                 </div>
                 <span className="text-2xl font-bold accent-text">Julius AI</span>
               </div>

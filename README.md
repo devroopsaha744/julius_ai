@@ -1,6 +1,6 @@
 # Julius AI - Intelligent Interview Platform
 
-Julius AI is a comprehensive, AI-powered technical interview platform that conducts full-stack interviews with real-time voice interaction, coding challenges, and detailed performance analytics.
+Julius AI is a comprehensive, AI-powered technical interview platform that conducts full-stack interviews with real-time voice interaction, coding challenges, and detailed performance analytics. The system is driven by autonomous agents which return structured JSON `InterviewStep` objects; the orchestrator uses these objects to deterministically advance the interview state machine.
 
 ##  Demo Video
 Check out the full walkthrough here:  
@@ -18,14 +18,14 @@ Check out the full walkthrough here:
 ### Technical Architecture
 - **Frontend**: Next.js 14 with TypeScript and Tailwind CSS
 - **Backend**: Node.js with WebSocket real-time communication
-- **AI Integration**: Groq API for natural language processing
-- **Voice Services**: AWS Transcribe (STT) and AWS Polly (TTS)
-- **Session Management**: Redis for persistent conversation storage
+- **AI Integration**: Groq API for natural language processing (agents return structured `InterviewStep` JSON)
+- **Voice Services**: Deepgram (STT) and ElevenLabs (TTS)
+- **Persistence & Storage**: MongoDB stores authoritative conversation history and InterviewStep records; Redis is used as a fast cache for curated problems, counters, and ephemeral session flags.
 # Julius AI — Realtime Interview Platform (Comprehensive Architecture & Workflow)
 
 This README documents the entire Julius AI system in exhaustive detail: design goals, every interview stage, realtime STT/TTS flow, event semantics, agent orchestration, coding-stage dual-stream logic, persistence, error-handling, security notes, and diagrams (Mermaid).
 
-> NOTE: This repository evolved through multiple refactors. The live WebSocket server lives at `ws-server/server.ts`. STT is implemented via Deepgram (configurable), and TTS via ElevenLabs (configurable). The architecture deliberately keeps Redis as the single source-of-truth for session history.
+> NOTE: This repository evolved through multiple refactors. The live WebSocket server lives at `ws-server/server.ts`. STT is implemented via Deepgram (configurable), and TTS via ElevenLabs (configurable). The architecture uses MongoDB as the authoritative store for conversation history and persisted InterviewStep records, while Redis is used as a high-performance cache for curated problems, counters, and ephemeral session flags.
 
 ---
 
@@ -41,10 +41,12 @@ This README documents the entire Julius AI system in exhaustive detail: design g
   - Computer Science (CS)
   - Behavioral
   - Wrap-up
-- Coding stage: dual-stream logic (very detailed)
-- Realtime STT/TTS flow (Deepgram -> LLM -> ElevenLabs) — sequence diagrams
-- Persistence & Redis
-- Agents & Orchestrator
+-- Coding stage: dual-stream logic (very detailed)
+-- Realtime STT/TTS flow (Deepgram -> LLM -> ElevenLabs) — sequence diagrams
+-- Directory structure
+-- Persistence & storage
+  - End-of-interview evaluation
+-- Agents & Orchestrator
 - Error handling & retries
 - Security & credentials
 - Deployment & operational notes
@@ -56,11 +58,7 @@ This README documents the entire Julius AI system in exhaustive detail: design g
 
 Julius AI is a platform built to run realistic technical interviews with low-latency voice interactions and intelligent stage-driven logic. The system emphasizes:
 
-- Realtime audio capture and transcription (STT) with partial/interim transcripts.
-- Low-latency agent (LLM) invocation when user silence or coding idleness indicates intent.
-- Natural TTS for assistant replies and audio playback orchestration.
-- Per-stage specialized behavior (different heuristics for coding vs conversation).
-- Persistance in Redis for auditability and session resumption.
+ - Persistence in MongoDB for auditability and session resumption; Redis is used for ephemeral session context and caching.
 
 This README explains the full data flow end-to-end and how the components coordinate.
 
@@ -77,158 +75,214 @@ This README explains the full data flow end-to-end and how the components coordi
 - Storage: Redis for session conversation history and final transcripts
 - Optional: AWS Transcribe/Polly fallback in earlier versions
 
+## Directory structure (top-level)
+
+The repository is organized into a few clear areas. Below is the high-level directory layout and the role of the most important folders/files (this is useful for contributors and operators):
+
+```
+app/                      # Next.js app (React pages, API routes in app/api/)
+  api/                    # API route handlers (curator, judge0, sessions, upload-resume)
+  coding/                 # UI pages for the coding flow
+  coding-test/            # Landing + test runner pages for the coding test flow
+  components/             # Reusable React components (CodeEditor, UI parts)
+
+core/                     # Runtime interview session state and managers
+  agent/                  # Agent handler glue code
+  audio/                  # Audio manager
+  coding/                 # Coding-specific runtime helpers
+  interview/              # Interview session in-memory model
+  messaging/              # Message processing helpers
+  server/                 # WebSocket server adapters for the core server
+
+lib/                      # Domain services & LLM integrations
+  prompts/                # Prompt templates (curator, evaluator, unified_interview)
+  services/               # Orchestrator, unified agent, scoring, curator services
+  models/                 # Type definitions & domain models used by services
+  utils/                  # Helpers: redis/mongo adapters, TTS/STT wrappers, groq client
+
+ws-server/                # Lightweight WebSocket server used for low-latency audio flows
+tests/                    # Unit tests (agent/service tests)
+uploads/                  # Uploaded resumes and artifacts (S3 or local during dev)
+README.md                 # This documentation
+package.json, tsconfig*    # Build/config files
+```
+
+Notes:
+- `lib/services` contains the orchestrator and agent adapters; prefer prompt edits in `lib/prompts` over heavy code changes.
+- `core/interview/InterviewSession.ts` models the in-memory runtime state; persistent copies of `InterviewStep` objects are stored in MongoDB for audit & analytics.
+- `ws-server/` is an alternative lightweight server optimized for audio; the Next.js API routes live under `app/api/`.
+
+### Important files to inspect when changing behavior
+- `ws-server/server.ts` — realtime audio + websocket handling
+- `lib/services/orchestrator.ts` — maps `InterviewStep` outputs to stage transitions
+- `lib/prompts/unified_interview.txt` — the main prompt used by unified agents
+- `app/components/CodeEditor.tsx` — simplified black editor used by the coding-test runner
+
+## High-level architecture
+
+- Frontend: Next.js + React (UI, microphone, code editor, controls)
+- Realtime: WebSocket server (`ws-server/server.ts`) — receives audio chunks and other events
+- STT: Deepgram (configurable) — web socket streaming connection per client session
+- Orchestrator: `lib/services/orchestrator.ts` — stage machine that routes messages to agents
+- Agents: Greeting/Project/Coding/CS/Behavioral/WrapUp/Scoring/Recommendation
+- TTS: ElevenLabs (configurable) — synthesizes `assistant_message` into MP3/Buffer for client playback
+- Storage: MongoDB stores authoritative conversation history and InterviewStep records; Redis is used as a fast cache for curated problems, counters, and ephemeral session flags.
+- Optional: AWS Transcribe/Polly fallback in earlier versions
+
 
 Diagram: high-level component layout (mermaid)
 
 ```mermaid
 flowchart TB
-    %% Client Layer
-    subgraph CLIENT["🖥️ Client Browser (Next.js + React)"]
-        UI[User Interface]
-        MIC[Microphone Input]
-        EDITOR[Code Editor]
-        PLAYER[Audio Player]
-        UPLOADER[Resume Uploader]
-    end
+  %% Client Layer
+  subgraph CLIENT["🖥️ Client Browser (Next.js + React)"]
+    UI[User Interface]
+    MIC[Microphone Input]
+    EDITOR[Code Editor]
+    PLAYER[Audio Player]
+    UPLOADER[Resume Uploader]
+  end
 
-    %% WebSocket Server Layer
-    subgraph WS_SERVER["🌐 WebSocket Server (julius-ws)"]
-        WS[WebSocket Handler]
-        SESSION[Session Manager]
-        AUDIO_PROC[Audio Processing]
-        DUAL_STREAM[Dual-Stream Logic<br/>Speech + Code]
-    end
+  %% WebSocket Server Layer
+  subgraph WS_SERVER["🌐 WebSocket Server (julius-ws)"]
+    WS[WebSocket Handler]
+    SESSION[Session Cache (Redis)]
+    AUDIO_PROC[Audio Processing]
+    DUAL_STREAM[Dual-Stream Logic<br/>Speech + Code]
+  end
 
-    %% External Services Layer
-    subgraph STT_SERVICE["🎤 Speech-to-Text"]
-        DEEPGRAM[Deepgram STT<br/>WebSocket Streaming]
-        AWS_STT[AWS Transcribe<br/>Fallback]
-    end
+  %% External Services Layer
+  subgraph STT_SERVICE["🎤 Speech-to-Text"]
+    DEEPGRAM[Deepgram STT<br/>WebSocket Streaming]
+    AWS_STT[AWS Transcribe<br/>Fallback]
+  end
 
-    subgraph TTS_SERVICE["🔊 Text-to-Speech"]
-        ELEVENLABS[ElevenLabs TTS<br/>Primary]
-        AWS_TTS[AWS Polly<br/>Fallback]
-    end
+  subgraph TTS_SERVICE["🔊 Text-to-Speech"]
+    ELEVENLABS[ElevenLabs TTS<br/>Primary]
+    AWS_TTS[AWS Polly<br/>Fallback]
+  end
 
-    %% Core Processing Layer
-    subgraph CORE["🧠 Core Processing"]
-        ORCHESTRATOR[Orchestrator<br/>Stage Machine]
+  %% Core Processing Layer
+  subgraph CORE["🧠 Core Processing"]
+    ORCHESTRATOR[Orchestrator<br/>Stage Machine<br/>(persists to MongoDB)]
         
-        subgraph AGENTS["AI Agents"]
-            GREETING[Greeting Agent]
-            PROJECT[Project/Resume Agent]
-            CODING[Coding Agent]
-            CS[Computer Science Agent]
-            BEHAVIORAL[Behavioral Agent]
-            WRAPUP[Wrap-up Agent]
-            SCORING[Scoring Agent]
-            RECOMMEND[Recommendation Agent]
-        end
+    subgraph AGENTS["AI Agents"]
+      GREETING[Greeting Agent]
+      PROJECT[Project/Resume Agent]
+      CODING[Coding Agent]
+      CS[Computer Science Agent]
+      BEHAVIORAL[Behavioral Agent]
+      WRAPUP[Wrap-up Agent]
+      SCORING[Scoring Agent]
+      RECOMMEND[Recommendation Agent]
+    end
         
-        subgraph LLM_SERVICES["🤖 LLM Services"]
-            GROQ[Groq API]
-            OPENAI[OpenAI API]
-        end
+    subgraph LLM_SERVICES["🤖 LLM Services"]
+      GROQ[Groq API]
+      OPENAI[OpenAI API]
     end
+  end
 
-    %% Storage Layer
-    subgraph STORAGE["💾 Storage & Persistence"]
-        REDIS[(Redis<br/>Session Store<br/>Chat History)]
-        FILES[File System<br/>Resume Storage]
-    end
+  %% Storage Layer
+  subgraph STORAGE["💾 Storage & Persistence"]
+    MONGO[(MongoDB<br/>Authoritative Interview History)]
+    REDIS[(Redis Cache<br/>Curated Problems & Counters)]
+    FILES[File System / Object Storage<br/>Resume Storage]
+  end
 
-    %% API Layer
-    subgraph API["📡 API Endpoints"]
-        UPLOAD_API[Resume Upload API<br/>/api/upload-resume]
-    end
+  %% API Layer
+  subgraph API["📡 API Endpoints"]
+    UPLOAD_API[Resume Upload API<br/>/api/upload-resume]
+  end
 
-    %% Data Flow Connections
-    
-    %% Client to WebSocket
-    CLIENT -.->|"WebSocket Events:<br/>• start_transcription<br/>• audio_chunk<br/>• code_input<br/>• code_keystroke<br/>• text_input"| WS_SERVER
-    WS_SERVER -.->|"WebSocket Events:<br/>• partial_transcript<br/>• final_transcript<br/>• audio_response<br/>• agent_response<br/>• stage_changed"| CLIENT
+  %% Data Flow Connections
 
-    %% Audio Processing Flow
-    MIC -->|Base64 PCM Audio| AUDIO_PROC
-    AUDIO_PROC -->|Stream Audio| DEEPGRAM
-    DEEPGRAM -->|Partial Transcripts| WS
-    DEEPGRAM -->|Final Transcripts| DUAL_STREAM
+  %% Client to WebSocket
+  CLIENT -.->|"WebSocket Events:<br/>• start_transcription<br/>• audio_chunk<br/>• code_input<br/>• code_keystroke<br/>• text_input"| WS_SERVER
+  WS_SERVER -.->|"WebSocket Events:<br/>• partial_transcript<br/>• final_transcript<br/>• audio_response<br/>• agent_response<br/>• stage_changed"| CLIENT
 
-    %% Code Processing Flow
-    EDITOR -->|Keystrokes & Code| DUAL_STREAM
-    DUAL_STREAM -->|Combined Message<br/>Code + Speech| ORCHESTRATOR
+  %% Audio Processing Flow
+  MIC -->|Base64 PCM Audio| AUDIO_PROC
+  AUDIO_PROC -->|Stream Audio| DEEPGRAM
+  DEEPGRAM -->|Partial Transcripts| WS
+  DEEPGRAM -->|Final Transcripts| DUAL_STREAM
 
-    %% Stage Management & Agent Routing
-    ORCHESTRATOR -->|Route by Stage| GREETING
-    ORCHESTRATOR -->|Route by Stage| PROJECT
-    ORCHESTRATOR -->|Route by Stage| CODING
-    ORCHESTRATOR -->|Route by Stage| CS
-    ORCHESTRATOR -->|Route by Stage| BEHAVIORAL
-    ORCHESTRATOR -->|Route by Stage| WRAPUP
+  %% Code Processing Flow
+  EDITOR -->|Keystrokes & Code| DUAL_STREAM
+  DUAL_STREAM -->|Combined Message<br/>Code + Speech| ORCHESTRATOR
 
-    %% LLM Integration
-    AGENTS -->|Prompts & Context| GROQ
-    AGENTS -->|Prompts & Context| OPENAI
-    GROQ -->|Responses| AGENTS
-    OPENAI -->|Responses| AGENTS
+  %% Stage Management & Agent Routing
+  ORCHESTRATOR -->|Route by Stage| GREETING
+  ORCHESTRATOR -->|Route by Stage| PROJECT
+  ORCHESTRATOR -->|Route by Stage| CODING
+  ORCHESTRATOR -->|Route by Stage| CS
+  ORCHESTRATOR -->|Route by Stage| BEHAVIORAL
+  ORCHESTRATOR -->|Route by Stage| WRAPUP
 
-    %% TTS Flow
-    AGENTS -->|assistant_message| ELEVENLABS
-    ELEVENLABS -->|Audio Buffer| WS
-    WS -->|Base64 Audio| PLAYER
+  %% LLM Integration
+  AGENTS -->|Prompts & Context| GROQ
+  AGENTS -->|Prompts & Context| OPENAI
+  GROQ -->|Responses| AGENTS
+  OPENAI -->|Responses| AGENTS
 
-    %% Session Persistence
-    SESSION <-->|Store/Retrieve<br/>Chat History| REDIS
-    ORCHESTRATOR <-->|Load Context<br/>Save Results| REDIS
+  %% TTS Flow
+  AGENTS -->|assistant_message| ELEVENLABS
+  ELEVENLABS -->|Audio Buffer| WS
+  WS -->|Base64 Audio| PLAYER
 
-    %% Resume Handling
-    UPLOADER -->|Multipart Upload| UPLOAD_API
-    UPLOAD_API -->|Store File| FILES
-    FILES -->|Resume Path| PROJECT
-    CLIENT -.->|set_resume_path| SESSION
+  %% Session Persistence
+  SESSION <-->|Cache Get/Set| REDIS
+  ORCHESTRATOR <-->|Persist InterviewStep| MONGO
+  ORCHESTRATOR <-->|Read Context (fast)| REDIS
 
-    %% Scoring & Recommendations (End of Interview)
-    WRAPUP -->|Trigger Scoring| SCORING
-    WRAPUP -->|Trigger Recommendations| RECOMMEND
-    SCORING -->|Results| REDIS
-    RECOMMEND -->|Results| REDIS
+  %% Resume Handling
+  UPLOADER -->|Multipart Upload| UPLOAD_API
+  UPLOAD_API -->|Store File| FILES
+  FILES -->|Resume Path| PROJECT
+  CLIENT -.->|set_resume_path| SESSION
 
-    %% Fallback Services
-    DEEPGRAM -.->|Fallback| AWS_STT
-    ELEVENLABS -.->|Fallback| AWS_TTS
-    AWS_STT -.->|Transcripts| DUAL_STREAM
-    AWS_TTS -.->|Audio| WS
+  %% Scoring & Recommendations (End of Interview)
+  WRAPUP -->|Trigger Scoring| SCORING
+  WRAPUP -->|Trigger Recommendations| RECOMMEND
+  SCORING -->|Persist Results| MONGO
+  RECOMMEND -->|Persist Results| MONGO
 
-    %% Interview Stages Flow
-    subgraph STAGES["📋 Interview Flow"]
-        STAGE1[1. Greeting]
-        STAGE2[2. Resume Review]
-        STAGE3[3. Coding Challenges]
-        STAGE4[4. Computer Science]
-        STAGE5[5. Behavioral Questions]
-        STAGE6[6. Wrap-up & Scoring]
+  %% Fallback Services
+  DEEPGRAM -.->|Fallback| AWS_STT
+  ELEVENLABS -.->|Fallback| AWS_TTS
+  AWS_STT -.->|Transcripts| DUAL_STREAM
+  AWS_TTS -.->|Audio| WS
+
+  %% Interview Stages Flow
+  subgraph STAGES["📋 Interview Flow"]
+    STAGE1[1. Greeting]
+    STAGE2[2. Resume Review]
+    STAGE3[3. Coding Challenges]
+    STAGE4[4. Computer Science]
+    STAGE5[5. Behavioral Questions]
+    STAGE6[6. Wrap-up & Scoring]
         
-        STAGE1 --> STAGE2
-        STAGE2 --> STAGE3
-        STAGE3 --> STAGE4
-        STAGE4 --> STAGE5
-        STAGE5 --> STAGE6
-    end
+    STAGE1 --> STAGE2
+    STAGE2 --> STAGE3
+    STAGE3 --> STAGE4
+    STAGE4 --> STAGE5
+    STAGE5 --> STAGE6
+  end
 
-    STAGES -.->|Stage Context| ORCHESTRATOR
+  STAGES -.->|Stage Context| ORCHESTRATOR
 
-    %% Styling - Black background with white text
-    classDef clientClass fill:#000000,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef serverClass fill:#333333,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef serviceClass fill:#1a1a1a,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef storageClass fill:#2a2a2a,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef agentClass fill:#404040,stroke:#ffffff,stroke-width:2px,color:#ffffff
+  %% Styling - Black background with white text
+  classDef clientClass fill:#000000,stroke:#ffffff,stroke-width:2px,color:#ffffff
+  classDef serverClass fill:#333333,stroke:#ffffff,stroke-width:2px,color:#ffffff
+  classDef serviceClass fill:#1a1a1a,stroke:#ffffff,stroke-width:2px,color:#ffffff
+  classDef storageClass fill:#2a2a2a,stroke:#ffffff,stroke-width:2px,color:#ffffff
+  classDef agentClass fill:#404040,stroke:#ffffff,stroke-width:2px,color:#ffffff
 
-    class CLIENT,UI,MIC,EDITOR,PLAYER,UPLOADER clientClass
-    class WS_SERVER,WS,SESSION,AUDIO_PROC,DUAL_STREAM serverClass
-    class STT_SERVICE,TTS_SERVICE,DEEPGRAM,ELEVENLABS,AWS_STT,AWS_TTS serviceClass
-    class STORAGE,REDIS,FILES storageClass
-    class AGENTS,GREETING,PROJECT,CODING,CS,BEHAVIORAL,WRAPUP,SCORING,RECOMMEND agentClass
+  class CLIENT,UI,MIC,EDITOR,PLAYER,UPLOADER clientClass
+  class WS_SERVER,WS,SESSION,AUDIO_PROC,DUAL_STREAM serverClass
+  class STT_SERVICE,TTS_SERVICE,DEEPGRAM,ELEVENLABS,AWS_STT,AWS_TTS serviceClass
+  class STORAGE,MONGO,REDIS,FILES storageClass
+  class AGENTS,GREETING,PROJECT,CODING,CS,BEHAVIORAL,WRAPUP,SCORING,RECOMMEND agentClass
 ```
 
 ---
@@ -267,48 +321,50 @@ Important: `audio_response` contains the base64 audio buffer for the assistant's
 
 ---
 
-## Interview stages — full detail
+## Interview stages — full detail (structured agent outputs)
 
-All stage logic lives in the orchestrator (`lib/services/orchestrator.ts`). Each stage maps to a specific Agent:
+All stage logic lives in the orchestrator (`lib/services/orchestrator.ts`). Each stage is driven by an Agent that returns a structured `InterviewStep` JSON object. The orchestrator advances stages only when `InterviewStep.current_substate` matches an allowed token — this removes ambiguity and keeps UI, audio, and persistence deterministic.
+
+Stages and agents (concise):
 
 1. Greeting
-   - Agent: `GreetingAgent`
-   - Goal: Short rapport-building conversation and capture readiness
-  - Signals to move on: `InterviewStep.substate` must be one of the allowed tokens (see below). The orchestrator advances stages based only on these returned tokens.
-   - Typical latency: low — the agent responds rapidly to single-turn inputs
+  - Agent: `GreetingAgent` — rapport, readiness checks
+  - Move: `InterviewStep.current_substate = 'greet'`
 
 2. Resume Review
-   - Agent: `ProjectAgent`
-   - Goal: Use uploaded resume to surface talking points and ask clarifying questions
-   - Input required: resume file (path configured via `set_resume_path`)
-  - Move condition: agent returns one of the allowed substates (`greet`,`resume`,`coding`,`cs`,`behave`,`wrap_up`,`end`)
+  - Agent: `ProjectAgent` — highlights from uploaded resume; asks clarifying questions
+  - Move: `InterviewStep.current_substate = 'resume'`
 
 3. Coding
-   - Agent: `CodingAgent`
-   - Goal: Present live coding challenges and evaluate submitted code
-   - Special: This stage uses the dual-stream (speech + code) invocation logic — see the separate section below
-  - Move condition: `substate` one of the allowed tokens listed above.
+  - Agent: `CodingAgent` — curated coding challenges and evaluation
+  - Trigger: recruiter/candidate clicks `Start Coding Test` or the orchestrator returns `coding` substate
+  - On trigger: the Coding Curator service generates exactly 3 problems (easy/medium/hard). The UI opens a simplified black code editor with three problem tabs and three language options (Java, Python, C++). Each problem includes starter templates for all three languages.
+  - Move: `InterviewStep.current_substate = 'coding'`
 
 4. Computer Science (CS)
-  - Agent: `CSAgent`
-  - Goal: Ask concept and system-design questions; capture responses via speech or text
-  - Move: driven by returned `substate` token (allowed: `greet`,`resume`,`coding`,`cs`,`behave`,`wrap_up`,`end`)
+  - Agent: `CSAgent` — conceptual and design questions
+  - Move: `InterviewStep.current_substate = 'cs'`
 
 5. Behavioral
-   - Agent: `BehaviouralAgent`
-   - Goal: STAR questions, situational behavior; evaluate for cultural fit
-  - Move: driven by returned `substate` token (allowed: `greet`,`resume`,`coding`,`cs`,`behave`,`wrap_up`,`end`)
+  - Agent: `BehaviouralAgent` — STAR-style behavioral prompts
+  - Move: `InterviewStep.current_substate = 'behave'`
 
-6. Wrap-up
-   - Agent: `WrapUpAgent`
-   - Goal: Close the interview; trigger scoring and recommendation agents in parallel
-   - Move: finish (InterviewStage.COMPLETED)
+6. Wrap-up / End
+  - Agent: `WrapUpAgent` — final messages and triggers for scoring/recommendations
+  - Move: `InterviewStep.current_substate = 'wrap_up'` or `end`
 
+Minimal `InterviewStep` contract (all agents must follow):
 
-Each agent returns an `InterviewStep` object containing (at minimum):
-- `assistant_message` (string)
-- `current_substate` (string) — used to determine transitions
-- Optional structured payloads like audio, scoring results, or recommendations
+- `assistant_message`: string — text to speak/display
+- `current_substate`: string — state token for orchestrator transitions
+
+Optional structured fields commonly used:
+
+- `audio`: base64 or metadata for TTS
+- `scoring`: scoring object (technical & conversational)
+- `recommendation`: hire/no-hire string and rationale
+- `coding_evaluation`: per-problem Judge0 results and code-quality notes
+
 
 ---
 
@@ -445,10 +501,36 @@ Security note: Resume files may contain PII. Store them with restricted permissi
 
 ---
 
-## Persistence & Redis
+## Persistence & storage
 
-- Redis stores the session transcript history and any intermediate InterviewStep results. Use `redisSession` utilities to append new messages and load historical context when the session restarts.
-- Keep Redis as single source-of-truth for reconstructing sessions or running scoring/recommendation jobs after interview completion.
+The project uses a two-tier persistence model:
+
+- MongoDB (authoritative): stores immutable InterviewStep records, final transcripts, scoring results, recommendations, and generated reports. All final, auditable data lives in MongoDB.
+- Redis (ephemeral/high-performance cache): stores session-scoped ephemeral data such as curated problems cache, counters, short-lived session flags, and in-memory-like session context to speed orchestration. Redis keys use TTLs (default ~2 hours) and are not authoritative.
+
+Key responsibilities:
+
+- The orchestrator persists final `InterviewStep` objects and end-of-interview reports to MongoDB.
+- Curator responses (the 3 curated problems) are cached in Redis using keys like `curator:${sessionId}:problems` to reduce LLM costs and improve UI responsiveness.
+- Counters, rate-limits, and short-lived flags remain in Redis for low-latency operations.
+
+### End-of-interview evaluation breakdown
+
+At the end of an interview the system composes and persists a three-part evaluation document in MongoDB:
+
+1. Technical scoring
+  - Source: Judge0 execution results (per-problem), automated unit-test outcomes, and Coding Agent code-quality notes.
+  - Persisted: per-problem numeric scores and an aggregated technical score.
+
+2. Conversational & behavioral scoring
+  - Source: Agent assessments of spoken and typed responses during CS and Behavioral stages.
+  - Persisted: rubrics (numerical) and highlights (free-text) for communication, problem explanation, and behavioral indicators.
+
+3. Recommendation & summary
+  - Source: Recommendation Agent that combines scoring signals, agent rationales, and resume-derived context.
+  - Persisted: `{ recommendation: 'hire'|'no-hire'|'maybe', rationale: string, strengths: string[], improvements: string[] }`.
+
+All three parts are stored as nested objects on the Interview document in MongoDB and are accessible via API endpoints for report generation and recruiter dashboards.
 
 ---
 
@@ -542,8 +624,8 @@ sequenceDiagram
 
 - VAD / Endpointing: voice activity detection; Deepgram emits `speech_final` or `UtteranceEnd` when it detects a pause or end of a spoken phrase. We use these signals to decide whether to call the LLM.
 - Interim transcripts: partial updates while the user is speaking. These are useful for showing live text to the candidate but not calling the LLM.
-- Dual-stream: mixing typed code edits and spoken commentary. We track both streams independently and invoke the LLM only when both streams are idle or a final submission arrives.
-- single-source-of-truth: Redis keeps the session history for replay, audits, and scoring.
+ - Dual-stream: mixing typed code edits and spoken commentary. We track both streams independently and invoke the LLM only when both streams are idle or a final submission arrives.
+ - single-source-of-truth: MongoDB stores the authoritative interview records for replay, audits, and scoring; Redis is used as a cache for ephemeral session state.
 
 ---
 

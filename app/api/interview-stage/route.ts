@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { InterviewOrchestrator } from '../../../lib/services/orchestrator';
+import { InterviewOrchestrator, InterviewStage } from '../../../lib/services/orchestrator';
 
 // In-memory storage for orchestrators by session (in production, use Redis or database)
 const orchestrators = new Map<string, InterviewOrchestrator>();
@@ -24,7 +24,25 @@ export async function GET(request: NextRequest) {
     }
 
     const currentStage = orchestrator.getCurrentStage();
-    const nextStage = orchestrator.getNextStage();
+    // compute next stage locally (getNextStage is private on the orchestrator)
+    const getNextStageLocal = (stage: InterviewStage): InterviewStage => {
+      switch (stage) {
+        case InterviewStage.GREET:
+          return InterviewStage.RESUME;
+        case InterviewStage.RESUME:
+          return InterviewStage.CS;
+        case InterviewStage.CS:
+          return InterviewStage.BEHAVIORAL;
+        case InterviewStage.BEHAVIORAL:
+          return InterviewStage.WRAPUP;
+        case InterviewStage.WRAPUP:
+          return InterviewStage.COMPLETED;
+        default:
+          return InterviewStage.COMPLETED;
+      }
+    };
+
+    const nextStage = getNextStageLocal(currentStage);
     const isCompleted = orchestrator.isCompleted();
 
     return NextResponse.json({

@@ -9,7 +9,7 @@ import { EvaluatorOutputSchema, EvaluatorOutput, CuratorOutput } from "../models
 import { zodResponseFormat } from "openai/helpers/zod";
 import fs from "fs";
 import path from "path";
-import { Judge0Executor } from "./judge0_executor";
+import { runOnOneCompiler } from "./onecompiler_executor";
 import { z } from "zod";
 
 export type SubmissionFile = { path: string; content: string };
@@ -18,16 +18,13 @@ export type EvaluatorInput = { submissions: Submission[]; problems: CuratorOutpu
 
 class CodingEvaluator {
   private prompt: string;
-  private judge0Executor: Judge0Executor;
+  // executor removed; use runOnOneCompiler helper
 
   constructor() {
     const promptPath = path.join(process.cwd(), "lib", "prompts", "coding_evaluator.txt");
     this.prompt = fs.readFileSync(promptPath, "utf-8");
 
-    // Initialize Judge0 executor
-    const judge0Host = process.env.JUDGE0_RAPIDAPI_HOST || 'judge0-ce.p.rapidapi.com';
-    const judge0ApiKey = process.env.JUDGE0_RAPIDAPI_KEY;
-    this.judge0Executor = new Judge0Executor(`https://${judge0Host}`, judge0ApiKey);
+  // No executor instance required; we call runOnOneCompiler directly per test case
   }
 
   async evaluate(input: EvaluatorInput): Promise<EvaluatorOutput> {
@@ -51,12 +48,30 @@ class CodingEvaluator {
       const sourceCode = this.combineSubmissionFiles(submission.files);
 
       try {
-        // Execute code against test cases using Judge0
-        const executionResult = await this.judge0Executor.executeCode(
-          sourceCode,
-          problem.language || 'javascript',
-          problem.test_cases
-        );
+        // Execute code against test cases using OneCompiler (call API per test case)
+        const testResults = [] as Array<{ passed: boolean; actual: string; execution_time: number; stderr?: string | null; exception?: string | null }>;
+        for (const tc of problem.test_cases) {
+          try {
+            const resp = await runOnOneCompiler({ language: problem.language || 'javascript', stdin: tc.input, source_code: sourceCode });
+            const out = (resp.stdout || '') as string;
+            const passed = out.trim() === (tc.expected_output || '').trim();
+            testResults.push({ passed, actual: out, execution_time: resp.executionTime || 0, stderr: resp.stderr || null, exception: resp.exception || null });
+          } catch (err) {
+            testResults.push({ passed: false, actual: '', execution_time: 0, stderr: null, exception: err instanceof Error ? err.message : String(err) });
+          }
+        }
+
+        const passed_tests = testResults.filter(t => t.passed).length;
+        const total_tests = testResults.length;
+        const average_time = testResults.reduce((s, r) => s + (r.execution_time || 0), 0) / (total_tests || 1);
+
+        const executionResult = {
+          passed_tests,
+          total_tests,
+          average_time,
+          average_memory: 0,
+          test_results: testResults
+        } as any;
 
         // Use Groq for additional evaluation (readability, optimization feedback)
         const groqEvaluation = await this.evaluateWithGroq(submission, problem, executionResult);

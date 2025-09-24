@@ -1,8 +1,14 @@
 import type { InterviewSession } from '../interview/InterviewSession';
 import type { WebSocketResponse } from '../types/SessionTypes';
+import type { CodingManager } from '../coding/CodingManager';
 import WebSocket from 'ws';
 
 export class AgentHandler {
+  private codingManager?: CodingManager;
+
+  constructor(opts?: { codingManager?: CodingManager }) {
+    this.codingManager = opts?.codingManager;
+  }
   async sendToAgent(
     ws: WebSocket,
     session: InterviewSession,
@@ -51,6 +57,17 @@ export class AgentHandler {
             newStage: result.currentStage,
             stageChanged: true
           });
+
+          // If a codingManager is available, inform it of stage changes so it can update session state
+          try {
+            if (this.codingManager && session) {
+              // Map orchestrator stage to coding manager expected stage token
+              const stageToken = String(result.currentStage).toLowerCase();
+              this.codingManager.handleStageChange(session, stageToken);
+            }
+          } catch (e) {
+            console.error('AgentHandler: failed to notify CodingManager of stage change', e);
+          }
         }
 
         this.sendResponse(ws, {

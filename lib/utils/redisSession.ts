@@ -97,3 +97,43 @@ export async function resetCounter(sessionId: string, counterName: string) {
   const key = `session:${sessionId}:counter:${counterName}`;
   await redis.del(key);
 }
+
+// Generic JSON helpers for caching small objects (like curator outputs)
+export async function setJSON(key: string, value: unknown, ttlSeconds?: number) {
+  try {
+    await ensureConnection();
+  } catch (err) {
+    // ensureConnection already logs
+  }
+  const s = JSON.stringify(value);
+  if (ttlSeconds && ttlSeconds > 0) {
+    await redis.set(key, s, 'EX', ttlSeconds);
+  } else {
+    await redis.set(key, s);
+  }
+}
+
+export async function getJSON<T = any>(key: string): Promise<T | null> {
+  try {
+    await ensureConnection();
+  } catch (err) {
+    // ensureConnection already logs
+  }
+  const raw = await redis.get(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.error('Failed to parse JSON from Redis key', key, (err as Error).message);
+    return null;
+  }
+}
+
+export async function delKey(key: string) {
+  try {
+    await ensureConnection();
+  } catch (err) {
+    // ignore
+  }
+  await redis.del(key);
+}

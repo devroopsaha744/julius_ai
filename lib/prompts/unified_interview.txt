@@ -116,12 +116,3 @@ Substate: completed
   "substate": "<specific substate from above>"
 }
 ```
-
-**NOTE:** The coding test will come at the end of the interview process.
-**Additional Rules:**
-* Always use `conversation_history` (provided in `user_message`) to ensure continuity
-* Track question count per substate in the conversation context
-* Only advance substate after completing 1 question for that substate
-* Only advance state after completing all substates for that state
-* **NEVER use emojis in your assistant_message**
-* Maintain professional, supportive, and encouraging tone throughout

@@ -8,6 +8,7 @@ import fs from 'fs';
 export enum InterviewStage {
   GREET = 'greet',
   RESUME = 'resume', 
+  CODING = 'coding',
   CS = 'cs',
   BEHAVIORAL = 'behavioral',
   WRAPUP = 'wrapup',
@@ -36,6 +37,7 @@ export class InterviewOrchestrator {
   private getstateForStage(stage: InterviewStage): string {
     const stageTostateMap: Record<InterviewStage, string> = {
       [InterviewStage.GREET]: 'greet',
+      [InterviewStage.CODING]: 'coding',
       [InterviewStage.RESUME]: 'resume',
       [InterviewStage.CS]: 'cs',
       [InterviewStage.BEHAVIORAL]: 'behave',
@@ -48,6 +50,7 @@ export class InterviewOrchestrator {
   private getStageForstate(state: string): InterviewStage {
     const stateToStageMap: Record<string, InterviewStage> = {
       'greet': InterviewStage.GREET,
+      'coding': InterviewStage.CODING,
       'resume': InterviewStage.RESUME,
       'cs': InterviewStage.CS,
       'behave': InterviewStage.BEHAVIORAL,
