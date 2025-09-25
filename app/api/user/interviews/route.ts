@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '../../../../lib/utils/mongoConnection';
 import InterviewSession from '../../../../lib/models/InterviewSession';
+import Interview from '../../../../lib/models/Interview';
 import User from '../../../../lib/models/User';
 
 type TokenInfo = {
@@ -44,10 +45,14 @@ export async function GET(req: Request) {
 
     await dbConnect();
 
-    const query: any = {};
-    if (recruiterId) query.recruiterId = recruiterId;
+    // For authenticated user, fetch their interviews
+    if (recruiterId) {
+      const interviews = await Interview.find({ userId: recruiterId }).sort({ createdAt: -1 }).limit(100).lean();
+      return NextResponse.json({ ok: true, interviews });
+    }
 
-    const sessions = await InterviewSession.find(query).sort({ createdAt: -1 }).limit(100).lean();
+    // Fallback to sessions if no user
+    const sessions = await InterviewSession.find({}).sort({ createdAt: -1 }).limit(100).lean();
     return NextResponse.json({ ok: true, sessions });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

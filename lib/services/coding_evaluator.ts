@@ -16,6 +16,28 @@ export type SubmissionFile = { path: string; content: string };
 export type Submission = { id: string; language: string; files: SubmissionFile[] };
 export type EvaluatorInput = { submissions: Submission[]; problems: CuratorOutput };
 
+export type SingleEvaluatorInput = { code: string; language: string; problem: any };
+export type SingleEvaluatorOutput = {
+  correctness: number;
+  optimization: number;
+  readability: number;
+  feedback: string;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  time_complexity: string;
+  space_complexity: string;
+  test_results: Array<{
+    test_case_index: number;
+    passed: boolean;
+    actual_output: string;
+    expected_output: string;
+    execution_time: number;
+    stderr?: string | null;
+    exception?: string | null;
+  }>;
+};
+
 class CodingEvaluator {
   private prompt: string;
   // executor removed; use runOnOneCompiler helper
@@ -198,6 +220,172 @@ Respond in JSON format:
         optimization: 5,
         readability: 5,
         feedback: 'Automated evaluation failed. Manual review recommended.'
+      };
+    }
+  }
+
+  async evaluateSingle(input: SingleEvaluatorInput): Promise<SingleEvaluatorOutput> {
+    const { code, language, problem } = input;
+
+    console.log(`[CODING_EVALUATOR] Evaluating single submission for problem ${problem.id}`);
+
+    const testResults: SingleEvaluatorOutput['test_results'] = [];
+
+    for (let i = 0; i < problem.test_cases.length; i++) {
+      const tc = problem.test_cases[i];
+      try {
+        const resp = await runOnOneCompiler({ language, stdin: tc.input, source_code: code });
+        const actual = (resp.stdout || '') as string;
+        const passed = actual.trim() === tc.expected_output.trim();
+        testResults.push({
+          test_case_index: i,
+          passed,
+          actual_output: actual,
+          expected_output: tc.expected_output,
+          execution_time: resp.executionTime || 0,
+          stderr: resp.stderr || null,
+          exception: resp.exception || null
+        });
+      } catch (err) {
+        testResults.push({
+          test_case_index: i,
+          passed: false,
+          actual_output: '',
+          expected_output: tc.expected_output,
+          execution_time: 0,
+          stderr: null,
+          exception: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+
+    // Use Groq for evaluation
+    const groqEvaluation = await this.evaluateSingleWithGroq(code, language, problem, testResults);
+
+    return {
+      correctness: groqEvaluation.correctness,
+      optimization: groqEvaluation.optimization,
+      readability: groqEvaluation.readability,
+      feedback: groqEvaluation.feedback,
+      strengths: groqEvaluation.strengths,
+      weaknesses: groqEvaluation.weaknesses,
+      suggestions: groqEvaluation.suggestions,
+      time_complexity: groqEvaluation.time_complexity,
+      space_complexity: groqEvaluation.space_complexity,
+      test_results: testResults
+    };
+  }
+
+  private async evaluateSingleWithGroq(
+    code: string,
+    language: string,
+    problem: any,
+    testResults: SingleEvaluatorOutput['test_results']
+  ): Promise<{ correctness: number; optimization: number; readability: number; feedback: string; strengths: string[]; weaknesses: string[]; suggestions: string[]; time_complexity: string; space_complexity: string }> {
+    const passedCount = testResults.filter(tr => tr.passed).length;
+    const totalCount = testResults.length;
+    const avgTime = testResults.reduce((sum, tr) => sum + tr.execution_time, 0) / totalCount;
+
+    const testDetails = testResults.map((tr, i) => {
+      const status = tr.passed ? 'PASS' : 'FAIL';
+      const time = tr.execution_time > 0 ? ` (${tr.execution_time}ms)` : '';
+      const error = tr.exception ? ` Error: ${tr.exception}` : '';
+      return `Test ${i + 1}: ${status}${time}${error}`;
+    }).join('\n');
+
+    const failedTests = testResults.filter(tr => !tr.passed);
+    const failureAnalysis = failedTests.length > 0 ?
+      `\nFailed Test Analysis:\n${failedTests.map((tr, i) =>
+        `Test ${testResults.indexOf(tr) + 1}: Expected "${tr.expected_output}", Got "${tr.actual_output}"`
+      ).join('\n')}` : '';
+
+    const evaluationPrompt = `
+You are an expert senior software engineer evaluating a coding submission.
+
+**PROBLEM STATEMENT:**
+Title: ${problem.title}
+Description: ${problem.description}
+Constraints: ${problem.constraints || 'None specified'}
+
+**CODE SUBMISSION (${language}):**
+\`\`\`${language}
+${code}
+\`\`\`
+
+**EXECUTION RESULTS:**
+- Tests Passed: ${passedCount}/${totalCount} (${Math.round((passedCount/totalCount)*100)}%)
+- Average Execution Time: ${avgTime.toFixed(2)}ms
+- Test Details:
+${testDetails}${failureAnalysis}
+
+**COMPREHENSIVE EVALUATION REQUIRED:**
+
+Analyze the code across these dimensions:
+
+1. **CORRECTNESS (1-10)**: Functional accuracy, edge cases, error handling, logic soundness
+2. **OPTIMIZATION (1-10)**: Time/space complexity, algorithm choice, performance, scalability
+3. **READABILITY (1-10)**: Code structure, naming, documentation, style, maintainability
+
+**Provide detailed feedback covering:**
+- Strengths of the solution
+- Specific weaknesses with examples
+- Algorithm/approach analysis
+- Code quality assessment
+- Concrete improvement suggestions
+- Learning takeaways
+
+**Scoring Guidelines:**
+- 9-10: Exceptional (production-ready)
+- 7-8: Good (solid with minor issues)
+- 5-6: Adequate (works but needs refinement)
+- 3-4: Poor (major issues)
+- 1-2: Unacceptable
+
+Return ONLY JSON:
+{
+  "correctness": number,
+  "optimization": number,
+  "readability": number,
+  "feedback": "Detailed 200-400 word analysis with specific examples and actionable suggestions"
+}
+`;
+
+    try {
+      const completion = await groqClient.chat.completions.parse({
+        model: "moonshotai/kimi-k2-instruct-0905",
+        messages: [{ role: "system", content: this.prompt }, { role: "user", content: evaluationPrompt }],
+        temperature: 0.3,
+        response_format: zodResponseFormat(
+          z.object({
+            correctness: z.number().min(1).max(10),
+            optimization: z.number().min(1).max(10),
+            readability: z.number().min(1).max(10),
+            feedback: z.string(),
+            strengths: z.array(z.string()),
+            weaknesses: z.array(z.string()),
+            suggestions: z.array(z.string()),
+            time_complexity: z.string(),
+            space_complexity: z.string()
+          }),
+          "evaluation"
+        )
+      });
+
+      const result = completion.choices[0].message.parsed;
+      return result as { correctness: number; optimization: number; readability: number; feedback: string; strengths: string[]; weaknesses: string[]; suggestions: string[]; time_complexity: string; space_complexity: string };
+
+    } catch (error) {
+      console.error('[CODING_EVALUATOR] Groq evaluation failed:', error);
+      return {
+        correctness: Math.round((passedCount / totalCount) * 10),
+        optimization: 5,
+        readability: 5,
+        feedback: `Evaluation completed with ${passedCount}/${totalCount} tests passing. Average execution time: ${avgTime.toFixed(2)}ms. ${failedTests.length > 0 ? `Failed tests indicate areas for improvement. ` : ''}Manual review recommended for detailed feedback.`,
+        strengths: [`Passed ${passedCount}/${totalCount} test cases`],
+        weaknesses: failedTests.length > 0 ? ['Some test cases failed'] : [],
+        suggestions: ['Review failed test cases', 'Consider edge cases'],
+        time_complexity: 'Unknown',
+        space_complexity: 'Unknown'
       };
     }
   }

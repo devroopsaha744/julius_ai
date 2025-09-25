@@ -8,6 +8,9 @@ import { CodingManager } from '../coding/CodingManager';
 import { MessageProcessor } from '../messaging/MessageProcessor';
 import { AgentHandler } from '../agent/AgentHandler';
 import type { WebSocketMessage } from '../types/SessionTypes';
+import dbConnect from '../../lib/utils/mongoConnection';
+import InterviewSessionModel from '../../lib/models/InterviewSession';
+import Resume from '../../lib/models/Resume';
 
 dotenv.config({ path: '.env.local' });
 
@@ -34,16 +37,52 @@ export class InterviewWebSocketServer {
     console.log('🚀 WebSocket server starting...');
 
     this.wss.on('connection', (ws: WebSocket) => {
-      const sessionId = uuidv4();
-      
-      // No AWS Transcribe client - using Deepgram for STT
-      const session = this.sessionManager.createSession(sessionId);
-      
-      ws.send(JSON.stringify({ type: 'connected', sessionId }));
+      // Don't create session yet, wait for start_transcription message
+      ws.send(JSON.stringify({ type: 'connected' }));
 
-      ws.on('message', async (data: Buffer) => this.handleMessage(ws, session, data));
-      ws.on('close', () => this.handleDisconnect(session));
-      ws.on('error', () => this.handleDisconnect(session));
+      let session: InterviewSession | null = null;
+
+      ws.on('message', async (data: Buffer) => {
+        if (!session) {
+          // Handle the first message to create session
+          try {
+            const message: WebSocketMessage = JSON.parse(data.toString());
+            if (message.type === 'start_transcription' && message.session_id) {
+              session = this.sessionManager.createSession(message.session_id);
+              // Create InterviewSession in DB
+              if (message.user_id) {
+                await dbConnect();
+                const existingSession = await InterviewSessionModel.findOne({ sessionId: message.session_id });
+                if (!existingSession) {
+                  const interviewSession = new InterviewSessionModel({
+                    sessionId: message.session_id,
+                    recruiterId: message.user_id,
+                    state: 'greet',
+                    substate: 'greet_intro',
+                  });
+                  await interviewSession.save();
+                  console.log(`💾 InterviewSession created: ${interviewSession._id}`);
+                }
+              }
+            } else {
+              // If not start_transcription, create with random ID for backward compatibility
+              const sessionId = uuidv4();
+              session = this.sessionManager.createSession(sessionId);
+            }
+          } catch (error) {
+            console.error('Error parsing initial message:', error);
+            return;
+          }
+        }
+        this.handleMessage(ws, session, data);
+      });
+
+      ws.on('close', () => {
+        if (session) this.handleDisconnect(session);
+      });
+      ws.on('error', () => {
+        if (session) this.handleDisconnect(session);
+      });
     });
 
     this.wss.on('listening', () => {

@@ -53,21 +53,40 @@ export async function createSession() {
   return sessionId;
 }
 
-export async function addMessage(sessionId: string, role: "user" | "assistant", content: string) {
+export async function addMessage(sessionId: string, role: "user" | "assistant", content: string, userId?: string) {
   await dbConnect();
-  const message = new Message({
-    sessionId,
+
+  const messageData = {
     role,
     content,
     timestamp: new Date(),
-  });
-  await message.save();
+  };
+
+  // Try to find existing conversation document for this session
+  let conversationDoc = await Message.findOne({ sessionId });
+
+  if (conversationDoc) {
+    // Append to existing conversation
+    conversationDoc.conversation.push(messageData);
+    if (userId && !conversationDoc.userId) {
+      conversationDoc.userId = userId;
+    }
+    await conversationDoc.save();
+  } else {
+    // Create new conversation document
+    const newConversation = new Message({
+      sessionId,
+      userId,
+      conversation: [messageData],
+    });
+    await newConversation.save();
+  }
 }
 
 export async function getMessages(sessionId: string) {
   await dbConnect();
-  const messages = await Message.find({ sessionId }).sort({ timestamp: 1 });
-  return messages.map(msg => ({ role: msg.role, content: msg.content }));
+  const conversationDoc = await Message.findOne({ sessionId });
+  return conversationDoc ? conversationDoc.conversation : [];
 }
 
 export async function deleteSession(sessionId: string) {

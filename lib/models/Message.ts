@@ -2,31 +2,43 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IMessage extends Document {
   sessionId: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
+  userId?: string;
+  conversation: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const MessageSchema: Schema = new Schema({
   sessionId: {
     type: String,
     required: true,
+    unique: true, // One document per session
   },
-  role: {
+  userId: {
     type: String,
-    enum: ['user', 'assistant'],
-    required: true,
+    required: false,
   },
-  content: {
-    type: String,
-    required: true,
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-  },
+  conversation: [{
+    role: {
+      type: String,
+      enum: ['user', 'assistant'],
+      required: true,
+    },
+    content: {
+      type: String,
+      required: true,
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+    },
+  }],
 }, {
-  timestamps: false, // We use timestamp field instead
+  timestamps: true, // Use createdAt and updatedAt
 });
 
 export default mongoose.models.Message || mongoose.model<IMessage>('Message', MessageSchema);

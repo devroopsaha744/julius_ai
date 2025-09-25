@@ -3,31 +3,26 @@
 Julius AI is a comprehensive, AI-powered technical interview platform that conducts full-stack interviews with real-time voice interaction, coding challenges, and detailed performance analytics. The system is driven by autonomous agents which return structured JSON `InterviewStep` objects; the orchestrator uses these objects to deterministically advance the interview state machine.
 
 ##  Demo Video
-Check out the full walkthrough here:  
+Check out the full walkthrough here:
 [![Julius AI Demo](https://img.youtube.com/vi/ef-nnittytc/0.jpg)](https://youtu.be/ef-nnittytc?si=pU6UyLKmKL69BBTw)
 
 ## 🚀 Features
 
 ### Core Capabilities
-- **Multi-Stage Interview Flow**: Greeting → Resume Review → Coding Challenges → Computer Science → Behavioral Questions → Wrap-up
-- **Real-time Voice Interaction**: Speech-to-text and text-to-speech powered by AWS Transcribe and Polly
-- **Code Submission & Evaluation**: Live code editor with syntax highlighting and AI-powered code analysis
-- **Intelligent Scoring**: Comprehensive evaluation across technical skills, communication, and behavioral aspects
+- **Multi-Stage Interview Flow**: Greeting → Resume Review → Computer Science → Behavioral Questions → Coding Challenges → Wrap-up
+- **Real-time Voice Interaction**: Speech-to-text and text-to-speech powered by Deepgram and ElevenLabs
+- **Code Submission & Evaluation**: Live code editor with syntax highlighting, AI-powered code analysis, and automated testing
+- **Intelligent Scoring**: Comprehensive evaluation across technical skills, communication, behavioral aspects, and coding proficiency
 - **Performance Analytics**: Detailed reports with strengths, improvement areas, and actionable recommendations
+- **Coding Challenge Platform**: Curated coding problems with multi-language support (Java, Python, C++) and 90-minute timed assessments
 
 ### Technical Architecture
 - **Frontend**: Next.js 14 with TypeScript and Tailwind CSS
 - **Backend**: Node.js with WebSocket real-time communication
 - **AI Integration**: Groq API for natural language processing (agents return structured `InterviewStep` JSON)
 - **Voice Services**: Deepgram (STT) and ElevenLabs (TTS)
+- **Code Execution**: OneCompiler API for secure code execution and testing
 - **Persistence & Storage**: MongoDB stores authoritative conversation history and InterviewStep records; Redis is used as a fast cache for curated problems, counters, and ephemeral session flags.
-# Julius AI — Realtime Interview Platform (Comprehensive Architecture & Workflow)
-
-This README documents the entire Julius AI system in exhaustive detail: design goals, every interview stage, realtime STT/TTS flow, event semantics, agent orchestration, coding-stage dual-stream logic, persistence, error-handling, security notes, and diagrams (Mermaid).
-
-> NOTE: This repository evolved through multiple refactors. The live WebSocket server lives at `ws-server/server.ts`. STT is implemented via Deepgram (configurable), and TTS via ElevenLabs (configurable). The architecture uses MongoDB as the authoritative store for conversation history and persisted InterviewStep records, while Redis is used as a high-performance cache for curated problems, counters, and ephemeral session flags.
-
----
 
 ## Table of contents
 
@@ -37,16 +32,17 @@ This README documents the entire Julius AI system in exhaustive detail: design g
 - Interview stages (detailed)
   - Greeting
   - Resume Review
-  - Coding
   - Computer Science (CS)
   - Behavioral
   - Wrap-up
--- Coding stage: dual-stream logic (very detailed)
--- Realtime STT/TTS flow (Deepgram -> LLM -> ElevenLabs) — sequence diagrams
--- Directory structure
--- Persistence & storage
+  - End
+- Coding Challenge (separate assessment)
+- Coding stage: dual-stream logic (very detailed)
+- Realtime STT/TTS flow (Deepgram -> LLM -> ElevenLabs) — sequence diagrams
+- Directory structure
+- Persistence & storage
   - End-of-interview evaluation
--- Agents & Orchestrator
+- Agents & Orchestrator
 - Error handling & retries
 - Security & credentials
 - Deployment & operational notes
@@ -81,10 +77,12 @@ The repository is organized into a few clear areas. Below is the high-level dire
 
 ```
 app/                      # Next.js app (React pages, API routes in app/api/)
-  api/                    # API route handlers (curator, judge0, sessions, upload-resume)
+  api/                    # API route handlers (curator, evaluator, judge0, sessions, upload-resume)
+    evaluate-coding/      # Code evaluation API endpoint
   coding/                 # UI pages for the coding flow
   coding-test/            # Landing + test runner pages for the coding test flow
   components/             # Reusable React components (CodeEditor, UI parts)
+  interview/              # Main interview interface with WebSocket integration
 
 core/                     # Runtime interview session state and managers
   agent/                  # Agent handler glue code
@@ -96,7 +94,12 @@ core/                     # Runtime interview session state and managers
 
 lib/                      # Domain services & LLM integrations
   prompts/                # Prompt templates (curator, evaluator, unified_interview)
+    coding_curator.txt    # Coding problem generation prompts
+    coding_evaluator.txt  # Code evaluation and scoring prompts
   services/               # Orchestrator, unified agent, scoring, curator services
+    coding_curator.ts     # Generates coding problems with starter templates
+    coding_evaluator.ts   # Evaluates code submissions with detailed feedback
+    onecompiler_executor.ts # Handles secure code execution
   models/                 # Type definitions & domain models used by services
   utils/                  # Helpers: redis/mongo adapters, TTS/STT wrappers, groq client
 
@@ -116,7 +119,10 @@ Notes:
 - `ws-server/server.ts` — realtime audio + websocket handling
 - `lib/services/orchestrator.ts` — maps `InterviewStep` outputs to stage transitions
 - `lib/prompts/unified_interview.txt` — the main prompt used by unified agents
+- `lib/services/coding_curator.ts` — generates coding problems with starter templates
+- `lib/services/coding_evaluator.ts` — evaluates code submissions with detailed feedback
 - `app/components/CodeEditor.tsx` — simplified black editor used by the coding-test runner
+- `app/coding-test/test/page.tsx` — coding test interface with 90-minute timer
 
 ## High-level architecture
 
@@ -124,10 +130,10 @@ Notes:
 - Realtime: WebSocket server (`ws-server/server.ts`) — receives audio chunks and other events
 - STT: Deepgram (configurable) — web socket streaming connection per client session
 - Orchestrator: `lib/services/orchestrator.ts` — stage machine that routes messages to agents
-- Agents: Greeting/Project/Coding/CS/Behavioral/WrapUp/Scoring/Recommendation
+- Agents: Greeting/Project/CS/Behavioral/WrapUp/CodingCurator/CodingEvaluator/Scoring/Recommendation
+- Code Execution: OneCompiler API for secure code execution and automated testing
 - TTS: ElevenLabs (configurable) — synthesizes `assistant_message` into MP3/Buffer for client playback
 - Storage: MongoDB stores authoritative conversation history and InterviewStep records; Redis is used as a fast cache for curated problems, counters, and ephemeral session flags.
-- Optional: AWS Transcribe/Polly fallback in earlier versions
 
 
 Diagram: high-level component layout (mermaid)
@@ -161,6 +167,10 @@ flowchart TB
     ELEVENLABS[ElevenLabs TTS<br/>Primary]
     AWS_TTS[AWS Polly<br/>Fallback]
   end
+  
+  subgraph CODE_EXECUTION["⚙️ Code Execution"]
+    ONECOMPILER[OneCompiler API<br/>Secure Code Execution]
+  end
 
   %% Core Processing Layer
   subgraph CORE["🧠 Core Processing"]
@@ -169,10 +179,11 @@ flowchart TB
     subgraph AGENTS["AI Agents"]
       GREETING[Greeting Agent]
       PROJECT[Project/Resume Agent]
-      CODING[Coding Agent]
       CS[Computer Science Agent]
       BEHAVIORAL[Behavioral Agent]
       WRAPUP[Wrap-up Agent]
+      CURATOR[Coding Curator Agent]
+      EVALUATOR[Coding Evaluator Agent]
       SCORING[Scoring Agent]
       RECOMMEND[Recommendation Agent]
     end
@@ -193,6 +204,7 @@ flowchart TB
   %% API Layer
   subgraph API["📡 API Endpoints"]
     UPLOAD_API[Resume Upload API<br/>/api/upload-resume]
+    EVALUATE_API[Coding Evaluation API<br/>/api/evaluate-coding]
   end
 
   %% Data Flow Connections
@@ -214,10 +226,11 @@ flowchart TB
   %% Stage Management & Agent Routing
   ORCHESTRATOR -->|Route by Stage| GREETING
   ORCHESTRATOR -->|Route by Stage| PROJECT
-  ORCHESTRATOR -->|Route by Stage| CODING
   ORCHESTRATOR -->|Route by Stage| CS
   ORCHESTRATOR -->|Route by Stage| BEHAVIORAL
   ORCHESTRATOR -->|Route by Stage| WRAPUP
+  ORCHESTRATOR -->|Route by Stage| CURATOR
+  ORCHESTRATOR -->|Route by Stage| EVALUATOR
 
   %% LLM Integration
   AGENTS -->|Prompts & Context| GROQ
@@ -241,6 +254,15 @@ flowchart TB
   FILES -->|Resume Path| PROJECT
   CLIENT -.->|set_resume_path| SESSION
 
+  %% Coding Challenge Flow
+  CURATOR -->|Generate Problems| REDIS
+  CLIENT -->|Request Problems| CURATOR
+  CURATOR -->|Return Problems| CLIENT
+  CLIENT -->|Submit Code| EVALUATE_API
+  EVALUATE_API -->|Execute Code| ONECOMPILER
+  ONECOMPILER -->|Test Results| EVALUATOR
+  EVALUATOR -->|Detailed Evaluation| CLIENT
+  
   %% Scoring & Recommendations (End of Interview)
   WRAPUP -->|Trigger Scoring| SCORING
   WRAPUP -->|Trigger Recommendations| RECOMMEND
@@ -257,16 +279,28 @@ flowchart TB
   subgraph STAGES["📋 Interview Flow"]
     STAGE1[1. Greeting]
     STAGE2[2. Resume Review]
-    STAGE3[3. Coding Challenges]
-    STAGE4[4. Computer Science]
-    STAGE5[5. Behavioral Questions]
-    STAGE6[6. Wrap-up & Scoring]
-        
+    STAGE3[3. Computer Science]
+    STAGE4[4. Behavioral Questions]
+    STAGE5[5. Wrap-up]
+    STAGE6[6. Interview Complete]
+
     STAGE1 --> STAGE2
     STAGE2 --> STAGE3
     STAGE3 --> STAGE4
     STAGE4 --> STAGE5
     STAGE5 --> STAGE6
+  end
+
+  %% Separate Coding Challenge
+  subgraph CODING["💻 Coding Challenge<br/>(Separate Assessment)"]
+    CURATOR[Coding Curator<br/>Generates Problems]
+    TIMER[90-min Timer<br/>Auto-submit]
+    EVALUATOR[Coding Evaluator<br/>Detailed Feedback]
+    REPORT[Comprehensive<br/>Evaluation Report]
+
+    CURATOR --> TIMER
+    TIMER --> EVALUATOR
+    EVALUATOR --> REPORT
   end
 
   STAGES -.->|Stage Context| ORCHESTRATOR
@@ -328,30 +362,35 @@ All stage logic lives in the orchestrator (`lib/services/orchestrator.ts`). Each
 Stages and agents (concise):
 
 1. Greeting
-  - Agent: `GreetingAgent` — rapport, readiness checks
-  - Move: `InterviewStep.current_substate = 'greet'`
+   - Agent: `GreetingAgent` — rapport, readiness checks
+   - Move: `InterviewStep.current_substate = 'greet'`
 
 2. Resume Review
-  - Agent: `ProjectAgent` — highlights from uploaded resume; asks clarifying questions
-  - Move: `InterviewStep.current_substate = 'resume'`
+   - Agent: `ProjectAgent` — highlights from uploaded resume; asks clarifying questions
+   - Move: `InterviewStep.current_substate = 'resume'`
 
-3. Coding
-  - Agent: `CodingAgent` — curated coding challenges and evaluation
-  - Trigger: recruiter/candidate clicks `Start Coding Test` or the orchestrator returns `coding` substate
-  - On trigger: the Coding Curator service generates exactly 3 problems (easy/medium/hard). The UI opens a simplified black code editor with three problem tabs and three language options (Java, Python, C++). Each problem includes starter templates for all three languages.
-  - Move: `InterviewStep.current_substate = 'coding'`
+3. Computer Science (CS)
+   - Agent: `CSAgent` — conceptual and design questions
+   - Move: `InterviewStep.current_substate = 'cs'`
 
-4. Computer Science (CS)
-  - Agent: `CSAgent` — conceptual and design questions
-  - Move: `InterviewStep.current_substate = 'cs'`
+4. Behavioral
+   - Agent: `BehaviouralAgent` — STAR-style behavioral prompts
+   - Move: `InterviewStep.current_substate = 'behave'`
 
-5. Behavioral
-  - Agent: `BehaviouralAgent` — STAR-style behavioral prompts
-  - Move: `InterviewStep.current_substate = 'behave'`
+5. Wrap-up
+   - Agent: `WrapUpAgent` — final questions and feedback
+   - Move: `InterviewStep.current_substate = 'wrap_up'`
 
-6. Wrap-up / End
-  - Agent: `WrapUpAgent` — final messages and triggers for scoring/recommendations
-  - Move: `InterviewStep.current_substate = 'wrap_up'` or `end`
+6. End
+   - Interview completion and access to coding challenge
+   - "Start Coding Challenge" button appears for separate coding assessment
+   - Move: `InterviewStep.current_substate = 'end'`
+
+**Separate Coding Challenge** (not part of interview state machine):
+- **Coding Curator Agent**: Generates exactly 3 problems (easy/medium/hard) with starter templates for Java, Python, C++
+- **90-minute Timer**: Starts when problems are loaded, auto-submits when expired
+- **Coding Evaluator Agent**: Executes code against test cases, provides detailed feedback on correctness, optimization, and readability
+- Trigger: After interview completion, "Start Coding Challenge" button appears
 
 Minimal `InterviewStep` contract (all agents must follow):
 
@@ -516,21 +555,26 @@ Key responsibilities:
 
 ### End-of-interview evaluation breakdown
 
-At the end of an interview the system composes and persists a three-part evaluation document in MongoDB:
+At the end of an interview the system composes and persists a comprehensive evaluation document in MongoDB:
 
-1. Technical scoring
-  - Source: Judge0 execution results (per-problem), automated unit-test outcomes, and Coding Agent code-quality notes.
-  - Persisted: per-problem numeric scores and an aggregated technical score.
+1. **Conversational Scoring**
+   - Source: Agent assessments of spoken and typed responses during Greeting, Resume, CS, and Behavioral stages
+   - Persisted: rubrics (numerical) for communication, technical knowledge, problem-solving approach, and behavioral indicators
 
-2. Conversational & behavioral scoring
-  - Source: Agent assessments of spoken and typed responses during CS and Behavioral stages.
-  - Persisted: rubrics (numerical) and highlights (free-text) for communication, problem explanation, and behavioral indicators.
+2. **Coding Evaluation**
+   - Source: Coding Evaluator Agent analysis of submitted code against test cases
+   - Components:
+     - **Correctness**: Test case pass/fail results (1-10 scale)
+     - **Optimization**: Time/space complexity analysis (1-10 scale)
+     - **Readability**: Code quality and maintainability (1-10 scale)
+     - **Detailed Feedback**: AI-generated analysis with strengths, weaknesses, and suggestions
+   - Persisted: per-problem scores, test results, complexity analysis, and comprehensive feedback
 
-3. Recommendation & summary
-  - Source: Recommendation Agent that combines scoring signals, agent rationales, and resume-derived context.
-  - Persisted: `{ recommendation: 'hire'|'no-hire'|'maybe', rationale: string, strengths: string[], improvements: string[] }`.
+3. **Recommendation & Summary**
+   - Source: Recommendation Agent that combines conversational and coding evaluation signals
+   - Persisted: `{ recommendation: 'hire'|'no-hire'|'maybe', rationale: string, strengths: string[], improvements: string[], actionableTips: string[] }`
 
-All three parts are stored as nested objects on the Interview document in MongoDB and are accessible via API endpoints for report generation and recruiter dashboards.
+The complete evaluation includes both conversational performance and coding proficiency, providing recruiters with a holistic assessment of candidate capabilities.
 
 ---
 
@@ -650,4 +694,9 @@ npm run dev
 
 This README aims to be the single authoritative source for how Julius AI works. If anything is unclear or if you want diagrams exported to the repo as SVGs or PNGs, tell me which diagram and I'll generate it.
 
-Julius AI — built for realistic, low-latency interviews.
+**Note on Diagrams**: If Mermaid diagrams are not displaying properly on GitHub, you can:
+1. View them in a Markdown preview that supports Mermaid (VS Code, etc.)
+2. Use online Mermaid editors like mermaid.live to render them
+3. Contact maintainers to export diagrams as images
+
+Julius AI — built for realistic, low-latency interviews with comprehensive coding evaluation.

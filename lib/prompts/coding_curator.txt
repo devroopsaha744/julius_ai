@@ -19,20 +19,8 @@ You are an expert coding problem curator for technical interviews. Generate exac
    * `input_format`: description of stdin, **Codeforces/CodeChef style** (line-by-line explanation)
    * `output_format`: description of stdout, **Codeforces/CodeChef style**
    * `constraints`: numeric limits (e.g., `1 ≤ n ≤ 10^5`), or `null` if none
-   * `samples`: at least 3 sample cases, formatted exactly like Codeforces:
-
-     ```
-     Input
-     <input here>
-
-     Output
-     <output here>
-     ```
-
-     Include an `explanation` field (or `""` if not needed).
-   * `input_output_examples`: at least 2 examples in the same Codeforces format
-   * `test_cases`: 3–5 hidden test cases (with `input` and `expected_output` fields) that follow the same stdin/stdout format
-   * `starter_template`: minimal function signature for **Java, C++, or Python only**, or `null` if not provided
+   * `test_cases`: exactly 3 hidden test cases (with `input` and `expected_output` fields) that follow the same stdin/stdout format
+   * `starter_template`: object with minimal code templates for each language: `{"java": "string", "cpp": "string", "python": "string"}`, or `null` if not provided
    * `language`: one of `"Java"`, `"C++"`, `"Python"`
 
 3. **Output must be strict JSON** matching this schema:
@@ -48,17 +36,17 @@ You are an expert coding problem curator for technical interviews. Generate exac
       "input_format": "string",
       "output_format": "string",
       "constraints": "string or null",
-      "samples": [
-        { "input": "string", "output": "string", "explanation": "string" }
-      ],
       "language": "string",
-      "input_output_examples": [
-        { "input": "string", "output": "string" }
-      ],
       "test_cases": [
+        { "input": "string", "expected_output": "string" },
+        { "input": "string", "expected_output": "string" },
         { "input": "string", "expected_output": "string" }
       ],
-      "starter_template": [{"java" : "string", "cpp" : "string", "python" : "string", }]
+      "starter_template": {
+        "java": "string",
+        "cpp": "string",
+        "python": "string"
+      }
     }
   ]
 }

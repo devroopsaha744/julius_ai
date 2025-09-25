@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '../../../../../lib/utils/mongoConnection';
-import InterviewSession from '../../../../../lib/models/InterviewSession';
-import Message from '../../../../../lib/models/Message';
-import Report from '../../../../../lib/models/Report';
-import User from '../../../../../lib/models/User';
+import dbConnect from 'lib/utils/mongoConnection';
+import InterviewSession from 'lib/models/InterviewSession';
+import Message from 'lib/models/Message';
+import Report from 'lib/models/Report';
+import User from 'lib/models/User';
 
 type TokenInfo = {
   aud?: string;

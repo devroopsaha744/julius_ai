@@ -26,7 +26,9 @@ export default function CodingTestLanding() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 hero-accent rounded-lg flex items-center justify-center overflow-hidden">
-              <img src="/assests/logo.svg" alt="Julius AI" className="w-8 h-8 object-contain" />
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#6B21A8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: 'white', fontWeight: 700 }}>JA</span>
+              </div>
             </div>
             <span className="text-2xl font-bold accent-text">Julius AI</span>
           </div>
@@ -53,7 +55,7 @@ export default function CodingTestLanding() {
           <button
             onClick={startTest}
             disabled={isStarting}
-            className="btn-electric text-xl px-12 py-4 group disabled:opacity-50"
+            className="btn-primary text-xl px-12 py-4 group disabled:opacity-50"
           >
             {isStarting ? 'Starting...' : 'Start Coding Test'}
           </button>

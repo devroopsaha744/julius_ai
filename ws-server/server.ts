@@ -7,6 +7,7 @@ import * as redisHelpers from '../lib/utils/redisSession';
 type ClientState = {
 	ws: WebSocket;
 	sessionId: string;
+	userId?: string;
 	stt: DeepgramSTTService;
 	orchestrator: InterviewOrchestrator;
 	// Transcript buffers
@@ -42,16 +43,6 @@ const RedisStore = {
 		} catch (e) {
 			console.error('Redis loadMessages error', e);
 			return [];
-		}
-	},
-	async saveMessages(sessionId: string, messages: any[]) {
-		try {
-			// Clear and push messages as a simple approach
-			for (const m of messages) {
-				await redisHelpers.addMessage(sessionId, m.role, m.content);
-			}
-		} catch (e) {
-			console.error('Redis saveMessages error', e);
 		}
 	}
 };
@@ -105,8 +96,7 @@ wss.on('connection', (ws) => {
 			sendJson({ type: 'assistant', text: result.response.assistant_message, currentStage: result.currentStage });
 
 			// Save assistant message to redis
-			const updated = [...messages, { role: 'assistant', content: result.response.assistant_message }];
-			await RedisStore.saveMessages(state.sessionId, updated as any);
+			await redisHelpers.addMessage(state.sessionId, 'assistant', result.response.assistant_message, state.userId);
 
 			// Synthesize audio using ElevenLabs (non-blocking)
 			if (result.response.assistant_message) {
@@ -153,16 +143,17 @@ wss.on('connection', (ws) => {
 	);
 
 	ws.on('message', async (data: Buffer) => {
-		const msg = tryParseJson(data);
-		if (msg && typeof msg === 'object') {
-			try {
-				if (msg.type === 'start') {
-					state.sessionId = String(msg.session_id || 'default');
-					state.orchestrator = new InterviewOrchestrator(state.sessionId);
-					await state.stt.connect();
-					sendJson({ type: 'ready' });
-					return;
-				}
+	  const msg = tryParseJson(data);
+	  if (msg && typeof msg === 'object') {
+	    try {
+	      if (msg.type === 'start' || msg.type === 'start_transcription') {
+	        state.sessionId = String(msg.session_id || 'default');
+	        state.userId = msg.user_id ? String(msg.user_id) : undefined;
+	        state.orchestrator = new InterviewOrchestrator(state.sessionId, state.userId);
+	        await state.stt.connect();
+	        sendJson({ type: 'ready' });
+	        return;
+	      }
 				if (msg.type === 'stop') {
 					await state.stt.disconnect();
 					state.finalQueue.length = 0;

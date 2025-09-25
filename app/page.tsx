@@ -72,10 +72,15 @@ export default function Home() {
 
       s.onload = () => {
         // Safe runtime checks for google identity
-  const g = (window as any).google;
+        const g = (window as any).google;
+        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+        if (!clientId) {
+          console.warn('NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set. Google Sign-In will not be initialized.');
+          return;
+        }
         if (g && g.accounts && g.accounts.id) {
           g.accounts.id.initialize({
-            client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+            client_id: clientId,
             callback: handleCredentialResponse,
           });
           const target = document.getElementById('g_id_onload');
@@ -144,7 +149,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 hero-accent rounded-lg flex items-center justify-center overflow-hidden">
-              <img src="/assests/logo.svg" alt="Julius AI" className="w-8 h-8 object-contain" />
+              {/* Simple inline logo: circle with initials (no external SVG file) */}
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#6B21A8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: 'white', fontWeight: 700 }}>JA</span>
+              </div>
             </div>
             <span className="text-2xl font-bold accent-text">Julius AI</span>
           </div>
@@ -155,13 +163,18 @@ export default function Home() {
             <Link href="/interview" className="btn-primary">Start Interview</Link>
             <Link href="/coding" className="btn-outline">Recruiter Coding</Link>
             {/* Google Sign-in area */}
-            {/** Show user if signed in */}
             {typeof window !== 'undefined' && (
               <div id="gsi-root" className="flex items-center space-x-4">
                 {localStorage.getItem('julius_user') ? (
                   <UserBadge />
                 ) : (
-                  <div id="g_id_onload"></div>
+                  <div>
+                    <div id="g_id_onload"></div>
+                    {/* Fallback: link to the profile page which contains the GSI button and helpful messaging */}
+                    <div style={{ fontSize: 12 }}>
+                      <a href="/profile" className="muted">Sign in</a>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -191,16 +204,39 @@ export default function Home() {
 
           {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-20">
-            <Link href="/interview">
-              <button className="btn-electric text-xl px-12 py-4 group">
+            {user ? (
+              <Link href="/interview">
+                <button className="btn-electric text-xl px-12 py-4 group">
+                  <span className="flex items-center space-x-3">
+                    <span>Start Your Interview</span>
+                    <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </span>
+                </button>
+              </Link>
+            ) : (
+              <button
+                onClick={() => {
+                  // Trigger Google Sign-In
+                  const g = (window as any).google;
+                  if (g && g.accounts && g.accounts.id) {
+                    g.accounts.id.prompt();
+                  } else {
+                    // Fallback: redirect to profile page
+                    window.location.href = '/profile';
+                  }
+                }}
+                className="btn-electric text-xl px-12 py-4 group"
+              >
                 <span className="flex items-center space-x-3">
-                  <span>Start Your Interview</span>
-                  <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  <span>Sign In to Start Interview</span>
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                   </svg>
                 </span>
               </button>
-            </Link>
+            )}
             
             <Link href="#demo">
               <button className="btn-outline text-xl px-12 py-4 group">

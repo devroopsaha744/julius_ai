@@ -180,8 +180,12 @@ export class InterviewWebSocketClient {
     }
   }
 
-  startTranscription() {
-    this.send({ type: 'start_transcription' });
+  startTranscription(sessionId?: string, userId?: string) {
+    if (sessionId && userId) {
+      this.send({ type: 'start', session_id: sessionId, user_id: userId });
+    } else {
+      this.send({ type: 'start_transcription' });
+    }
   }
 
   stopTranscription() {
@@ -238,10 +242,11 @@ export class InterviewWebSocketClient {
 }
 
 // Utility function for uploading resume
-export async function uploadResume(file: File, sessionId: string) {
+export async function uploadResume(file: File, sessionId: string, userId: string) {
   const formData = new FormData();
   formData.append('resume', file);
   formData.append('sessionId', sessionId);
+  formData.append('userId', userId);
 
   const response = await fetch('/api/upload-resume', {
     method: 'POST',

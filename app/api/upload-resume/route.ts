@@ -3,12 +3,16 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
+import dbConnect from '../../../lib/utils/mongoConnection';
+import Resume from '../../../lib/models/Resume';
+import InterviewSession from '../../../lib/models/InterviewSession';
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('resume') as File;
     const sessionId = formData.get('sessionId') as string;
+    const userId = formData.get('userId') as string;
 
     if (!file) {
       return NextResponse.json(
@@ -20,6 +24,13 @@ export async function POST(request: NextRequest) {
     if (!sessionId) {
       return NextResponse.json(
         { error: 'No session ID provided' },
+        { status: 400 }
+      );
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'No user ID provided' },
         { status: 400 }
       );
     }
@@ -67,13 +78,36 @@ export async function POST(request: NextRequest) {
 
     console.log(`📁 Resume saved to temp directory: ${filePath}`);
 
-    // Return success response with file path (no Redis needed!)
+    // Connect to database and create Resume document
+    await dbConnect();
+
+    // Find the InterviewSession to link the resume
+    const interviewSession = await InterviewSession.findOne({ sessionId }).lean();
+    const sessionObjectId = interviewSession ? (interviewSession as any)._id : undefined;
+
+    // Create Resume document
+    const resume = new Resume({
+      filename: fileName,
+      originalName: file.name,
+      path: filePath,
+      size: file.size,
+      mimeType: file.type,
+      uploadedBy: userId,
+      sessionId: sessionObjectId,
+    });
+
+    await resume.save();
+
+    console.log(`💾 Resume document created in database: ${resume._id}`);
+
+    // Return success response with file path and resume ID
     return NextResponse.json({
       success: true,
-      message: 'Resume uploaded successfully to temp directory',
+      message: 'Resume uploaded successfully',
       filePath: filePath,
       fileName: fileName,
       sessionId: sessionId,
+      resumeId: resume._id,
       fileSize: file.size,
       fileType: file.type,
       uploadedAt: new Date().toISOString()

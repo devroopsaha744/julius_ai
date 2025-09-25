@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/julius_ai';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+// Ensure all collections are created under this database name unless explicitly overridden
+const MONGODB_DB = process.env.MONGODB_DB || 'julius';
 
 if (!MONGODB_URI) {
   throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
@@ -23,8 +25,12 @@ async function dbConnect() {
   }
 
   if (!cached.promise) {
-    const opts = {
+    const opts: any = {
       bufferCommands: false,
+      // Force the database name; this ensures collections are created under `julius`
+      dbName: MONGODB_DB,
+      // Keep other options flexible for different environments
+      autoIndex: false,
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {

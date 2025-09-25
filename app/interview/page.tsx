@@ -28,6 +28,16 @@ interface InterviewState {
 }
 
 export default function InterviewInterface() {
+  const [user, setUser] = useState<any>(() => {
+    try {
+      if (typeof window === 'undefined') return null;
+      const raw = localStorage.getItem('julius_user');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
   const [state, setState] = useState<InterviewState>({
     isConnected: false,
     isTranscribing: false,
@@ -57,17 +67,24 @@ export default function InterviewInterface() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   useEffect(() => {
+    // Check authentication
+    if (!user) {
+      window.location.href = '/profile';
+      return;
+    }
+
     initializeWebSocket();
     return () => {
       if (clientRef.current) {
         clientRef.current.disconnect();
       }
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
 
   const initializeWebSocket = async () => {
     try {
@@ -76,12 +93,18 @@ export default function InterviewInterface() {
 
       client.on('connected', (data: any) => {
         console.log('Connected event received:', data);
-        setState(prev => ({ 
-          ...prev, 
-          isConnected: true, 
-          sessionId: data?.sessionId || `session_${Date.now()}`
+        const sessionId = data?.sessionId || `session_${Date.now()}`;
+        setState(prev => ({
+          ...prev,
+          isConnected: true,
+          sessionId
         }));
         addSystemMessage('Connected to interview system');
+
+        // Send start message with sessionId and userId
+        if (user?._id) {
+          client.startTranscription(sessionId, user._id);
+        }
       });
 
       client.on('stage_changed', (data: any) => {
@@ -89,20 +112,20 @@ export default function InterviewInterface() {
           // Only update if stage actually changed
           if (prev.currentStage !== data.newStage) {
             addSystemMessage(`Interview stage: ${data.previousStage} → ${data.newStage}`);
-            
+
             // Notify server of stage change for dual-stream tracking
             if (clientRef.current) {
               clientRef.current.sendStageChange(data.newStage);
             }
-            
+
             // Show code editor for coding stage
             if (data.newStage === 'coding') {
               setShowCodeEditor(true);
-              addSystemMessage('Code editor enabled. You can now submit code solutions.');
+              addSystemMessage('Code editor enabled. You can now proceed to the coding challenge.');
             } else {
               setShowCodeEditor(false);
             }
-            
+
             return { ...prev, currentStage: data.newStage };
           }
           return prev;
@@ -447,11 +470,11 @@ export default function InterviewInterface() {
 
   const handleResumeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !state.sessionId) return;
+    if (!file || !state.sessionId || !user?._id) return;
 
     try {
       setError(null);
-      const result = await uploadResume(file, state.sessionId);
+      const result = await uploadResume(file, state.sessionId, user._id);
       setState(prev => ({ 
         ...prev, 
         resumeUploaded: true, 
@@ -475,7 +498,7 @@ export default function InterviewInterface() {
         clientRef.current.sendStageChange('coding');
       }
       // Open the coding test (curator) in a new tab so the candidate sees the coding UI
-      window.open('/coding-test/test', '_blank');
+      window.open(`/coding-test/test?sessionId=${state.sessionId}`, '_blank');
       addSystemMessage('Starting coding test...');
     } catch (e) {
       console.error('Failed to start coding test', e);
@@ -621,10 +644,11 @@ export default function InterviewInterface() {
 
   const handleCodeKeystroke = (code: string, language: string) => {
     if (!clientRef.current) return;
-    
+
     // Send keystroke events to server for dual-stream tracking
     clientRef.current.sendCodeKeystroke(code, language);
   };
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -632,31 +656,38 @@ export default function InterviewInterface() {
 
   const getStageColor = (stage?: string) => {
     const colors = {
-      greet: 'bg-gradient-to-r from-cyan-500 to-blue-500',
-      resume: 'bg-gradient-to-r from-green-400 to-cyan-500', 
-      coding: 'bg-gradient-to-r from-purple-500 to-cyan-500',
-      cs: 'bg-gradient-to-r from-yellow-400 to-cyan-500',
-      behavioral: 'bg-gradient-to-r from-pink-500 to-cyan-500',
-      wrapup: 'bg-gradient-to-r from-indigo-500 to-cyan-500',
-      completed: 'bg-gradient-to-r from-gray-500 to-cyan-600'
+      greet: 'bg-gradient-to-r from-purple-500 to-pink-500',
+      resume: 'bg-gradient-to-r from-purple-400 to-indigo-500', 
+      coding: 'bg-gradient-to-r from-purple-500 to-violet-500',
+      cs: 'bg-gradient-to-r from-indigo-500 to-purple-500',
+      behavioral: 'bg-gradient-to-r from-pink-500 to-purple-500',
+      wrapup: 'bg-gradient-to-r from-violet-500 to-purple-500',
+      completed: 'bg-gradient-to-r from-gray-500 to-purple-600'
     };
-    return colors[stage as keyof typeof colors] || 'bg-gradient-to-r from-gray-400 to-cyan-600';
+    return colors[stage as keyof typeof colors] || 'bg-gradient-to-r from-gray-400 to-purple-600';
   };
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <div className="glass-effect border-b border-gray-800/50 p-4 backdrop-blur-sm">
+    <div className="min-h-screen bg-white text-black overflow-hidden">
+      {/* Animated Background */}
+      <div className="fixed inset-0 opacity-12">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-400/12 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/12 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      </div>
+  {/* Header */}
+  <div className="glass-effect border-b border-gray-200/30 p-4 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-lg flex items-center justify-center">
-                <span className="text-black font-bold text-xl">J</span>
+              <div className="w-10 h-10 hero-accent rounded-lg flex items-center justify-center overflow-hidden">
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#6B21A8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: 'white', fontWeight: 700 }}>JA</span>
+                </div>
               </div>
-              <h1 className="text-2xl font-bold electric-text">Julius AI Interview</h1>
+              <h1 className="text-2xl font-bold accent-text">Julius AI Interview</h1>
             </div>
             {state.currentStage && (
-              <span className={`px-3 py-1 rounded-full text-xs font-medium text-white electric-glow ${getStageColor(state.currentStage)}`}>
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStageColor(state.currentStage)}`}>
                 {state.currentStage.toUpperCase()}
               </span>
             )}
@@ -675,12 +706,12 @@ export default function InterviewInterface() {
         {/* Main Chat Area */}
         <div className="lg:col-span-2 space-y-4">
           {/* Messages */}
-          <div className="glass-effect rounded-xl border border-gray-800/50">
-            <div className="p-4 border-b border-gray-800/50">
-              <h2 className="text-lg font-semibold electric-text">Interview Conversation</h2>
+          <div className="glass-effect rounded-xl border border-gray-200/30">
+            <div className="p-4 border-b border-gray-200/20">
+              <h2 className="text-lg font-semibold text-purple-700">Interview Conversation</h2>
             </div>
             
-            <div className="h-96 overflow-y-auto p-4 space-y-3">
+            <div className="h-[600px] overflow-y-auto p-4 space-y-3">
               {messages.map((message) => (
                 <div
                   key={message.id}
@@ -689,10 +720,10 @@ export default function InterviewInterface() {
                   <div
                     className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
                       message.type === 'user'
-                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white electric-glow'
+                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
                         : message.type === 'system'
-                        ? 'glass-effect text-cyan-300 text-sm border border-cyan-400/30'
-                        : 'glass-effect text-gray-100 border border-gray-600/50'
+                        ? 'bg-purple-50 text-purple-700 text-sm border border-purple-200'
+                        : 'bg-gray-50 text-gray-800 border border-gray-200'
                     }`}
                   >
                     {message.isCode ? (
@@ -712,9 +743,9 @@ export default function InterviewInterface() {
               {/* Current transcript */}
               {currentTranscript && (
                 <div className="flex justify-end">
-                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg bg-cyan-500/20 text-white border-2 border-dashed border-cyan-400 electric-glow">
+                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg bg-purple-500/20 text-purple-800 border-2 border-dashed border-purple-400 purple-glow">
                     <p className="whitespace-pre-wrap">{currentTranscript}</p>
-                    <div className="text-xs text-cyan-200 mt-1">Speaking...</div>
+                    <div className="text-xs text-purple-600 mt-1">Speaking...</div>
                   </div>
                 </div>
               )}
@@ -722,9 +753,9 @@ export default function InterviewInterface() {
               {/* Processing indicator */}
               {state.isProcessing && (
                 <div className="flex justify-start">
-                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg glass-effect text-gray-300 border border-cyan-400/30">
+                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg glass-effect text-gray-700 border border-purple-400/30">
                     <div className="flex items-center space-x-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-400"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-400"></div>
                       <span>Julius is thinking...</span>
                     </div>
                   </div>
@@ -734,9 +765,9 @@ export default function InterviewInterface() {
               {/* Audio generation indicator */}
               {state.isGeneratingAudio && (
                 <div className="flex justify-start">
-                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg glass-effect text-gray-300 border border-green-400/30">
+                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg glass-effect text-gray-700 border border-purple-400/30">
                     <div className="flex items-center space-x-2">
-                      <div className="animate-pulse w-4 h-4 bg-green-400 rounded-full shadow-lg shadow-green-400/50"></div>
+                      <div className="animate-pulse w-4 h-4 bg-purple-400 rounded-full shadow-lg shadow-purple-400/50"></div>
                       <span>Generating audio...</span>
                     </div>
                   </div>
@@ -746,12 +777,12 @@ export default function InterviewInterface() {
               {/* Audio playing indicator */}
               {state.isPlayingAudio && (
                 <div className="flex justify-start">
-                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg glass-effect text-gray-300 border border-blue-400/30">
+                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg glass-effect text-gray-700 border border-purple-400/30">
                     <div className="flex items-center space-x-2">
                       <div className="flex space-x-1">
-                        <div className="w-1 h-4 bg-blue-400 animate-pulse shadow-lg shadow-blue-400/50"></div>
-                        <div className="w-1 h-4 bg-blue-400 animate-pulse delay-75 shadow-lg shadow-blue-400/50"></div>
-                        <div className="w-1 h-4 bg-blue-400 animate-pulse delay-150 shadow-lg shadow-blue-400/50"></div>
+                        <div className="w-1 h-4 bg-purple-400 animate-pulse shadow-lg shadow-purple-400/50"></div>
+                        <div className="w-1 h-4 bg-purple-400 animate-pulse delay-75 shadow-lg shadow-purple-400/50"></div>
+                        <div className="w-1 h-4 bg-purple-400 animate-pulse delay-150 shadow-lg shadow-purple-400/50"></div>
                       </div>
                       <span>Playing audio...</span>
                     </div>
@@ -766,7 +797,7 @@ export default function InterviewInterface() {
           {/* Input Area */}
           <div className="space-y-4">
             {/* Text Input */}
-            <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 p-4">
               <div className="flex space-x-2">
                 <input
                   type="text"
@@ -774,7 +805,7 @@ export default function InterviewInterface() {
                   onChange={(e) => setTextInput(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && sendTextMessage()}
                   placeholder={showCodeEditor ? "Ask a question about the problem..." : "Type your message..."}
-                  className="flex-1 bg-black/40 border border-gray-600/50 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-cyan-400 focus:shadow-lg focus:shadow-cyan-400/20"
+                  className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2 text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/20"
                   disabled={!state.isConnected || state.isProcessing}
                 />
                 <button
@@ -786,7 +817,7 @@ export default function InterviewInterface() {
                 </button>
               </div>
               {showCodeEditor && (
-                <div className="mt-2 text-xs text-cyan-300">
+                <div className="mt-2 text-xs text-purple-600">
                   💡 Use this to ask questions about the problem. Submit your code solution using the editor below.
                 </div>
               )}
@@ -803,7 +834,7 @@ export default function InterviewInterface() {
             )}
 
             {/* Voice Controls */}
-            <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   {(() => {
@@ -854,8 +885,8 @@ export default function InterviewInterface() {
         {/* Sidebar */}
         <div className="space-y-4">
           {/* Resume Upload */}
-          <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
-            <h3 className="text-lg font-semibold electric-text mb-3">Resume Upload</h3>
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 p-4">
+            <h3 className="text-lg font-semibold text-purple-700 mb-3">Resume Upload</h3>
             
             {!state.resumeUploaded ? (
               <div>
@@ -869,7 +900,7 @@ export default function InterviewInterface() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={!state.sessionId}
-                  className="w-full btn-electric px-4 py-3 font-medium border-2 border-dashed border-cyan-400 hover:border-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full btn-electric px-4 py-3 font-medium border-2 border-dashed border-purple-400 hover:border-purple-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Upload Resume
                 </button>
@@ -885,40 +916,41 @@ export default function InterviewInterface() {
                 <span className="text-sm">Resume uploaded successfully</span>
               </div>
             )}
-              {/* Start Coding Test Button */}
-              <div className="mt-3">
-                <button
-                  onClick={startCodingTest}
-                  disabled={!state.isConnected}
-                  className="w-full btn-outline-electric px-4 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Start Coding Test
-                </button>
-              </div>
+              {/* Start Coding Test Button - Show when interview is completed */}
+              {state.currentStage === 'completed' && (
+                <div className="mt-3">
+                  <button
+                    onClick={startCodingTest}
+                    disabled={!state.isConnected}
+                    className="w-full btn-primary px-4 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Start Coding Challenge
+                  </button>
+                </div>
+              )}
           </div>
 
           {/* Interview Progress */}
-          <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
-            <h3 className="text-lg font-semibold electric-text mb-4">Interview Journey</h3>
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 p-4">
+            <h3 className="text-lg font-semibold text-purple-700 mb-4">Interview Journey</h3>
             
             {/* Tree-like Progress Structure */}
             <div className="relative">
               {/* Vertical Connection Line */}
-              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gradient-to-b from-cyan-400 via-blue-500 to-cyan-400 opacity-40"></div>
+              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gradient-to-b from-purple-400 via-pink-500 to-purple-400 opacity-40"></div>
               
               <div className="space-y-3">
                 {[
                   { key: 'greet', name: 'Greeting', description: 'Welcome & Introduction' },
                   { key: 'resume', name: 'Resume Review', description: 'Project Discussion' },
-                  { key: 'coding', name: 'Coding Challenge', description: 'Algorithm & DSA' },
                   { key: 'cs', name: 'CS Fundamentals', description: 'DBMS, OS, Networks' },
                   { key: 'behavioral', name: 'Behavioral', description: 'Culture & Teamwork' },
                   { key: 'wrapup', name: 'Wrap-up', description: 'Final Thoughts' },
-                  { key: 'completed', name: 'Completed', description: 'Interview Finished' }
+                  { key: 'completed', name: 'Interview Complete', description: 'Access coding challenge' }
                 ].map((stage, index) => {
                   const isActive = state.currentStage === stage.key;
-                  const isPassed = ['greet', 'resume', 'coding', 'cs', 'behavioral', 'wrapup'].indexOf(state.currentStage || '') > 
-                                   ['greet', 'resume', 'coding', 'cs', 'behavioral', 'wrapup'].indexOf(stage.key);
+                  const isPassed = ['greet', 'resume', 'cs', 'behavioral', 'wrapup', 'coding'].indexOf(state.currentStage || '') > 
+                                   ['greet', 'resume', 'cs', 'behavioral', 'wrapup', 'coding'].indexOf(stage.key);
                   const isCompleted = stage.key === 'completed' && state.currentStage === 'completed';
                   
                   return (
@@ -927,16 +959,16 @@ export default function InterviewInterface() {
                       <div className="relative z-10">
                         <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center ${
                           isCompleted ? 'bg-green-400 border-green-400 shadow-lg shadow-green-400/30' :
-                          isPassed ? 'bg-cyan-400 border-cyan-400 shadow-lg shadow-cyan-400/30' :
-                          isActive ? 'bg-cyan-400 border-cyan-400 shadow-lg shadow-cyan-400/50 electric-glow animate-pulse' :
-                          'bg-gray-700 border-gray-600'
+                          isPassed ? 'bg-purple-400 border-purple-400 shadow-lg shadow-purple-400/30' :
+                          isActive ? 'bg-purple-400 border-purple-400 shadow-lg shadow-purple-400/50 animate-pulse' :
+                          'bg-gray-300 border-gray-400'
                         }`}>
                           {isCompleted || isPassed ? (
                             <svg className="w-4 h-4 text-black" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                             </svg>
                           ) : isActive ? (
-                            <div className="w-3 h-3 bg-black rounded-full"></div>
+                            <div className="w-3 h-3 bg-purple-700 rounded-full"></div>
                           ) : (
                             <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
                           )}
@@ -944,28 +976,28 @@ export default function InterviewInterface() {
                       </div>
 
                       {/* Stage Content */}
-                      <div className={`flex-1 pb-3 ${isActive ? 'electric-glow' : ''}`}>
-                        <div className={`glass-effect rounded-lg p-3 card-hover transition-all duration-300 ${
-                          isActive ? 'border-cyan-400/50 bg-cyan-900/10' : 
-                          isPassed || isCompleted ? 'border-green-400/30 bg-green-900/5' :
-                          'border-gray-700/50'
+                      <div className={`flex-1 pb-3 ${isActive ? '' : ''}`}>
+                        <div className={`bg-white/60 rounded-lg p-3 border transition-all duration-300 ${
+                          isActive ? 'border-purple-400/50 bg-purple-50/50' : 
+                          isPassed || isCompleted ? 'border-green-400/30 bg-green-50/30' :
+                          'border-gray-200'
                         }`}>
                           <h4 className={`font-medium text-sm ${
-                            isCompleted ? 'text-green-400' :
-                            isPassed ? 'text-cyan-300' :
-                            isActive ? 'text-cyan-400' :
-                            'text-gray-400'
+                            isCompleted ? 'text-green-600' :
+                            isPassed ? 'text-purple-600' :
+                            isActive ? 'text-purple-700' :
+                            'text-gray-500'
                           }`}>
                             {stage.name}
                           </h4>
-                          <p className="text-xs text-gray-500 mt-1">{stage.description}</p>
+                          <p className="text-xs text-gray-600 mt-1">{stage.description}</p>
                           
                           {/* Status Badge */}
                           {(isActive || isPassed || isCompleted) && (
                             <div className={`inline-flex items-center mt-2 px-2 py-1 rounded-full text-xs font-medium ${
                               isCompleted ? 'bg-green-900/30 text-green-400 border border-green-400/20' :
-                              isPassed ? 'bg-cyan-900/30 text-cyan-400 border border-cyan-400/20' :
-                              'bg-cyan-900/30 text-cyan-400 border border-cyan-400/30 electric-glow'
+                              isPassed ? 'bg-purple-900/30 text-purple-400 border border-purple-400/20' :
+                              'bg-purple-900/30 text-purple-400 border border-purple-400/30 purple-glow'
                             }`}>
                               {isCompleted ? '✓ Complete' :
                                isPassed ? '✓ Passed' :
@@ -984,8 +1016,8 @@ export default function InterviewInterface() {
           {/* Report Data */}
           <div className="mb-4">
             {/* Button to view / generate report for current session */}
-            <div className="glass-effect rounded-xl border border-gray-800/50 p-3 mb-3">
-              <h3 className="text-sm font-semibold electric-text mb-2">Interview Report</h3>
+            <div className="glass-effect rounded-xl border border-gray-200/30 p-3 mb-3">
+              <h3 className="text-sm font-semibold text-purple-700 mb-2">Interview Report</h3>
               <div className="flex items-center space-x-2">
                 <button
                   onClick={async () => {
@@ -1031,19 +1063,19 @@ export default function InterviewInterface() {
             </div>
 
             {reportData && (
-              <div className="glass-effect rounded-xl border border-gray-800/50 p-4">
-                <h3 className="text-lg font-semibold electric-text mb-4">Interview Results</h3>
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 p-4">
+                <h3 className="text-lg font-semibold text-purple-700 mb-4">Interview Results</h3>
 
                 {reportData.scoring && (
                   <div className="mb-4">
-                    <div className="glass-effect rounded-lg p-4 bg-gradient-to-r from-green-900/20 to-cyan-900/20 border border-green-400/30">
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
                       <div className="flex items-center space-x-3">
-                        <div className="text-3xl font-bold text-green-400 electric-glow">
+                        <div className="text-3xl font-bold text-green-600">
                           {reportData.scoring.overall.final_score}/100
                         </div>
                         <div>
-                          <div className="text-sm text-gray-300 font-medium">Overall Score</div>
-                          <div className="text-xs text-cyan-400">Recommendation: {reportData.scoring.overall.recommendation}</div>
+                          <div className="text-sm text-gray-600 font-medium">Overall Score</div>
+                          <div className="text-xs text-purple-600">Recommendation: {reportData.scoring.overall.recommendation}</div>
                         </div>
                       </div>
                     </div>
@@ -1051,24 +1083,24 @@ export default function InterviewInterface() {
                 )}
 
                 {reportData.recommendation && (
-                  <div className="glass-effect rounded-lg p-3 border border-cyan-400/20">
-                    <h4 className="text-sm font-medium text-cyan-300 mb-2">Recommendations</h4>
+                  <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                    <h4 className="text-sm font-medium text-purple-700 mb-2">Recommendations</h4>
                     <div className="space-y-3">
                       {reportData.recommendation.recommendations.map((r: any, idx: number) => (
-                        <div key={idx} className="p-3 bg-black/40 border border-cyan-800 rounded-md">
+                        <div key={idx} className="p-3 bg-white border border-purple-100 rounded-md">
                           <div className="flex items-start justify-between">
                             <div>
-                              <div className="text-sm font-semibold text-white">{r.category}</div>
-                              <div className="text-xs text-gray-400 mt-1">{r.overallSummary}</div>
+                              <div className="text-sm font-semibold text-gray-800">{r.category}</div>
+                              <div className="text-xs text-gray-600 mt-1">{r.overallSummary}</div>
                             </div>
                           </div>
-                          <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-300">
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-700">
                             <div>
-                              <div className="font-medium text-cyan-300">Strengths</div>
+                              <div className="font-medium text-green-600">Strengths</div>
                               <ul className="list-disc pl-4 mt-1">{r.strengths.map((s: string, i: number) => <li key={i}>{s}</li>)}</ul>
                             </div>
                             <div>
-                              <div className="font-medium text-yellow-300">Areas to Improve</div>
+                              <div className="font-medium text-orange-600">Areas to Improve</div>
                               <ul className="list-disc pl-4 mt-1">{r.areasOfImprovement.map((s: string, i: number) => <li key={i}>{s}</li>)}</ul>
                             </div>
                             <div>
@@ -1078,7 +1110,7 @@ export default function InterviewInterface() {
                           </div>
                         </div>
                       ))}
-                      <div className="text-xs text-gray-400">Final Advice: {reportData.recommendation.finalAdvice}</div>
+                      <div className="text-xs text-gray-600">Final Advice: {reportData.recommendation.finalAdvice}</div>
                     </div>
                   </div>
                 )}
@@ -1088,7 +1120,7 @@ export default function InterviewInterface() {
 
           {/* Error Display */}
           {error && (
-            <div className="glass-effect rounded-xl border border-red-400/50 p-4 bg-red-900/20">
+            <div className="bg-red-50 rounded-xl border border-red-200 p-4">
               <div className="flex items-start space-x-3">
                 <div className="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/30">
                   <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -1096,14 +1128,14 @@ export default function InterviewInterface() {
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <div className="text-red-400 font-medium mb-2">Connection Error</div>
-                  <div className="text-red-300 text-sm whitespace-pre-line leading-relaxed">{error}</div>
+                  <div className="text-red-700 font-medium mb-2">Connection Error</div>
+                  <div className="text-red-600 text-sm whitespace-pre-line leading-relaxed">{error}</div>
                 </div>
               </div>
               <div className="flex space-x-3 mt-4">
                 <button
                   onClick={() => setError(null)}
-                  className="btn-outline-electric text-sm px-4 py-2 border-red-400 text-red-400 hover:bg-red-400/10"
+                  className="border border-red-400 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-sm"
                 >
                   Dismiss
                 </button>

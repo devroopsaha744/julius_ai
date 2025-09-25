@@ -37,6 +37,8 @@ export interface WebSocketMessage {
   explanation?: string;
   stage?: string;
   path?: string;
+  session_id?: string;
+  user_id?: string;
 }
 
 export interface WebSocketResponse {

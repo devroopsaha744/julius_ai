@@ -26,7 +26,7 @@ class CodingCurator {
         { role: "user", content: "Generate exactly 3 coding problems: 1 easy, 1 medium, 1 hard. Return null for starter_template if none." }
       ],
       // Make the model output less deterministic so curated problems vary a bit.
-      temperature: 0.8,
+      temperature: 0.9,
       top_p: 0.95,
       response_format: { type: "json_object" }
     });

@@ -7,8 +7,7 @@ import fs from 'fs';
 
 export enum InterviewStage {
   GREET = 'greet',
-  RESUME = 'resume', 
-  CODING = 'coding',
+  RESUME = 'resume',
   CS = 'cs',
   BEHAVIORAL = 'behavioral',
   WRAPUP = 'wrapup',
@@ -17,27 +16,28 @@ export enum InterviewStage {
 
 export class InterviewOrchestrator {
   private sessionId: string;
+  private userId?: string;
   private currentStage: InterviewStage;
-  
+
   // Single unified agent instance
   private unifiedAgent: UnifiedInterviewAgent;
   private scoringAgent: ScoringAgent;
   private recommendationAgent: RecommendationAgent;
 
-  constructor(sessionId: string) {
+  constructor(sessionId: string, userId?: string) {
     this.sessionId = sessionId;
+    this.userId = userId;
     this.currentStage = InterviewStage.GREET;
-    
+
     // Initialize unified agent and scoring/recommendation agents
-    this.unifiedAgent = new UnifiedInterviewAgent(sessionId);
-    this.scoringAgent = new ScoringAgent(sessionId);
-    this.recommendationAgent = new RecommendationAgent(sessionId);
+    this.unifiedAgent = new UnifiedInterviewAgent(sessionId, userId);
+    this.scoringAgent = new ScoringAgent(sessionId, userId);
+    this.recommendationAgent = new RecommendationAgent(sessionId, userId);
   }
 
   private getstateForStage(stage: InterviewStage): string {
     const stageTostateMap: Record<InterviewStage, string> = {
       [InterviewStage.GREET]: 'greet',
-      [InterviewStage.CODING]: 'coding',
       [InterviewStage.RESUME]: 'resume',
       [InterviewStage.CS]: 'cs',
       [InterviewStage.BEHAVIORAL]: 'behave',
@@ -50,7 +50,6 @@ export class InterviewOrchestrator {
   private getStageForstate(state: string): InterviewStage {
     const stateToStageMap: Record<string, InterviewStage> = {
       'greet': InterviewStage.GREET,
-      'coding': InterviewStage.CODING,
       'resume': InterviewStage.RESUME,
       'cs': InterviewStage.CS,
       'behave': InterviewStage.BEHAVIORAL,
@@ -109,7 +108,7 @@ export class InterviewOrchestrator {
         console.log(`[ORCHESTRATOR DEBUG] Agent response received. State: ${response.state}, Message: ${response.assistant_message?.substring(0, 50)}...`);
 
         // Validate state returned by agent
-        const allowedstates = ['greet','resume','cs','behave','wrap_up','end'];
+        const allowedstates = ['greet','resume','cs','behave','wrap_up','coding','end'];
         if (!allowedstates.includes(response.state)) {
           console.warn(`Agent returned invalid state '${response.state}', coercing to '${this.getstateForStage(this.currentStage)}'`);
           response.state = this.getstateForStage(this.currentStage);
@@ -156,18 +155,8 @@ export class InterviewOrchestrator {
           resumeContent,
           false
         );
-        // Special handling for wrapup stage - check for "closing" or "end" state
-        if (response.state === "closing" || response.state === "end") {
-          console.log(`[ORCHESTRATOR DEBUG] Wrapup stage ending - triggering scoring & recommendation`);
-          // Activate scoring and recommendation in parallel at the end of wrap up
-          if (!resumeFilePath) {
-            throw new Error('Resume file path is required for scoring and recommendation stage');
-          }
-          const [scoring, recommendation] = await this.activateScoringAndRecommendation(resumeFilePath);
-          scoringResult = scoring || undefined;
-          recommendationResult = recommendation || undefined;
-          this.currentStage = InterviewStage.COMPLETED;
-        } else if (this.shouldMoveToNextStage(response)) {
+        // After wrapup, transition to completed
+        if (this.shouldMoveToNextStage(response)) {
           this.currentStage = this.getNextStage();
         }
         break;
