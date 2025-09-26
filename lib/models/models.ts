@@ -159,23 +159,18 @@ const ProblemSchema = z.object({
   output_format: z.string(),
   // Constraints can be null when there are none
   constraints: z.string().nullable(),
-  samples: z.array(z.object({
-    input: z.string(),
-    output: z.string(),
-    explanation: z.string().nullable()
-  })),
   language: z.string().default('javascript'),
-  input_output_examples: z.array(z.object({
-    input: z.string(),
-    output: z.string()
-  })),
   test_cases: z.array(z.object({
     input: z.string(),
     expected_output: z.string()
   })),
   // The Responses API requires fields to be present. If there's no starter template,
   // allow the field to be null rather than making it optional.
-  starter_template: z.string().nullable()
+  starter_template: z.object({
+    java: z.string(),
+    cpp: z.string(),
+    python: z.string()
+  }).nullable()
 });
 
 export const CuratorOutputSchema = z.object({

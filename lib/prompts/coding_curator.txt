@@ -4,11 +4,7 @@ You are an expert coding problem curator for technical interviews. Generate exac
 
 ### REQUIREMENTS
 
-1. Generate exactly **3 problems**:
-
-   * 1 Easy (basic array/string manipulation or simple algorithms)
-   * 1 Medium (data structures: stack, queue, tree, or moderate algorithms)
-   * 1 Hard (dynamic programming, graph algorithms, or optimization)
+1. Generate exactly **3 problems** based on the combinations provided in the user message, each with the specified difficulty and tags.
 
 2. Each problem must include:
 
@@ -19,9 +15,9 @@ You are an expert coding problem curator for technical interviews. Generate exac
    * `input_format`: description of stdin, **Codeforces/CodeChef style** (line-by-line explanation)
    * `output_format`: description of stdout, **Codeforces/CodeChef style**
    * `constraints`: numeric limits (e.g., `1 ≤ n ≤ 10^5`), or `null` if none
+   * `language`: one of `"Java"`, `"C++"`, `"Python"`
    * `test_cases`: exactly 3 hidden test cases (with `input` and `expected_output` fields) that follow the same stdin/stdout format
    * `starter_template`: object with minimal code templates for each language: `{"java": "string", "cpp": "string", "python": "string"}`, or `null` if not provided
-   * `language`: one of `"Java"`, `"C++"`, `"Python"`
 
 3. **Output must be strict JSON** matching this schema:
 

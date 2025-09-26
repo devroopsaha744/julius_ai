@@ -19,22 +19,43 @@ class CodingCurator {
   }
 
   async curate(): Promise<CuratorOutput> {
+    const tags = [
+      "array", "string", "dynamic-programming", "binary-tree", "graph",
+      "linked-list", "backtracking", "greedy", "binary-search", "heap",
+      "hash-table", "stack", "queue", "recursion", "sliding-window",
+      "two-pointer", "bit-manipulation", "math", "design", "simulation"
+    ];
+
+    const difficulties = ["EASY", "MEDIUM", "HARD"];
+
+    // Create 3 dynamic combos with random difficulties
+    const shuffledDifficulties = [...difficulties].sort(() => 0.5 - Math.random());
+    const combos = [];
+    for (let i = 0; i < 3; i++) {
+      const numTags = Math.floor(Math.random() * 3) + 1; // 1-3 tags
+      const shuffledTags = [...tags].sort(() => 0.5 - Math.random());
+      const selectedTags = shuffledTags.slice(0, numTags);
+      combos.push({
+        tags: selectedTags,
+        difficulty: shuffledDifficulties[i]
+      });
+    }
+
+    const userContent = `Generate exactly 3 coding problems based on these combinations: ${JSON.stringify(combos)}. Return null for starter_template if none.`;
+
     const completion = await groqClient.chat.completions.parse({
       model: "moonshotai/kimi-k2-instruct-0905",
       messages: [
         { role: "system", content: this.prompt },
-        { role: "user", content: "Generate exactly 3 coding problems: 1 easy, 1 medium, 1 hard. Return null for starter_template if none." }
+        { role: "user", content: userContent }
       ],
-      // Make the model output less deterministic so curated problems vary a bit.
       temperature: 0.9,
-      top_p: 0.95,
       response_format: { type: "json_object" }
     });
 
     const raw = completion?.choices?.[0]?.message?.content;
     if (!raw) throw new Error("Failed to parse curator response: empty content");
 
-    // The client may return the parsed JSON as an object or as a string. Handle both.
     let parsed: unknown;
     if (typeof raw === 'string') {
       try {
@@ -48,12 +69,10 @@ class CodingCurator {
 
     const validation = CuratorOutputSchema.safeParse(parsed);
     if (!validation.success) {
-      // Provide readable diagnostics for easier debugging in logs
       const issues = validation.error.format();
       throw new Error(`Curator output did not match schema: ${JSON.stringify(issues)}`);
     }
 
-    // Cast to CuratorOutput to satisfy the declared return type and silence editor/type-checker
     return validation.data as CuratorOutput;
   }
 }
