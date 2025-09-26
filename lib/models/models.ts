@@ -107,6 +107,16 @@ const WrapUpStageSchema = z.object({
   notes: z.string()
 });
 
+const CommunicationSkillsSchema = z.object({
+  verbal_clarity: z.number(),
+  articulation: z.number(),
+  listening_skills: z.number(),
+  empathy: z.number(),
+  persuasion: z.number(),
+  active_listening: z.number(),
+  overall_communication_score: z.number()
+});
+
 const OverallSchema = z.object({
   final_score: z.number(),
   recommendation: z.string(),
@@ -125,6 +135,7 @@ export const InterviewScoringSchema = z.object({
     behavioral_round: BehavioralRoundStageSchema,
     wrap_up: WrapUpStageSchema
   }),
+  communication_skills: CommunicationSkillsSchema,
   overall: OverallSchema
 });
 

@@ -15,6 +15,12 @@ Experience Julius AI in action:
 ### Coding Test Platform
 ![Julius AI Coding Test](assests/img-2.png)
 
+### Interview Report Dashboard
+![Julius AI Interview Report](assests/img-3.png)
+
+### Communication Skills Analysis
+![Julius AI Communication Analysis](assests/img-4.png)
+
 ## 🚀 Core Features
 
 ### Interview Assessment Pipeline

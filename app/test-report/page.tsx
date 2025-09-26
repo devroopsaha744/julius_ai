@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { generateReport } from '@/lib/utils/interviewWebSocketClient';
+import React from 'react';
 
 interface ReportData {
   scoring?: any;
@@ -10,150 +9,189 @@ interface ReportData {
   generatedAt: string;
 }
 
-export default function ReportsPage() {
-  const [sessionId, setSessionId] = useState('');
-  const [resumeFilePath, setResumeFilePath] = useState('');
-  const [reportData, setReportData] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [reportType, setReportType] = useState<'scoring' | 'recommendation' | 'full'>('full');
-
-  const handleGenerateReport = async () => {
-    if (!sessionId.trim() || !resumeFilePath.trim()) {
-      setError('Please provide both Session ID and Resume File Path');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await generateReport(sessionId, resumeFilePath, reportType);
-      setReportData(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate report');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadSampleReport = () => {
-    const sample: ReportData = {
-      type: 'full',
-      generatedAt: new Date().toISOString(),
-      scoring: {
-        overall: {
-          final_score: 78,
-          recommendation: 'Hire',
-          strengths: ['Problem decomposition', 'Clear communication'],
-          weaknesses: ['Edge-case testing', 'Time optimization']
-        },
-        communication_skills: {
-          verbal_clarity: 8,
-          articulation: 7,
-          listening_skills: 9,
-          empathy: 8,
-          persuasion: 6,
-          active_listening: 9,
-          overall_communication_score: 8
-        },
-        stages: {
-          coding_round: {
-            score: 8,
-            criteria: {
-              problem_solving: 8,
-              code_correctness: 9,
-              optimization: 7,
-              readability: 8,
-              edge_case_handling: 7,
-              explanation: 8
-            },
-            artifacts: {
-              question: "Two Sum Problem - Find two numbers in an array that add up to a target sum",
-              code: "function twoSum(nums, target) {\n  const map = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const complement = target - nums[i];\n    if (map.has(complement)) {\n      return [map.get(complement), i];\n    }\n    map.set(nums[i], i);\n  }\n  return [];\n}",
-              explanation: "Used a hash map to store indices and their complements for O(n) time complexity.",
-              test_results: { passed: 15, failed: 2, total: 17 }
-            },
-            notes: "Solved the problem efficiently with clean, readable code. Handled most edge cases but missed a few boundary conditions."
-          },
-          coding_round_2: {
-            score: 7,
-            criteria: {
-              problem_solving: 7,
-              code_correctness: 8,
-              optimization: 6,
-              readability: 7,
-              edge_case_handling: 6,
-              explanation: 7
-            },
-            artifacts: {
-              question: "Valid Parentheses - Check if a string of parentheses is valid",
-              code: "function isValid(s) {\n  const stack = [];\n  const map = {\n    '(': ')',\n    '[': ']',\n    '{': '}'\n  };\n  \n  for (let char of s) {\n    if (map[char]) {\n      stack.push(char);\n    } else {\n      if (stack.length === 0 || map[stack.pop()] !== char) {\n        return false;\n      }\n    }\n  }\n  \n  return stack.length === 0;\n}",
-              explanation: "Used a stack to track opening brackets and validate closing brackets in order.",
-              test_results: { passed: 12, failed: 3, total: 15 }
-            },
-            notes: "Good understanding of stack data structure. Solution works but could be more optimized for edge cases."
-          },
-          coding_round_3: {
-            score: 9,
-            criteria: {
-              problem_solving: 9,
-              code_correctness: 9,
-              optimization: 8,
-              readability: 9,
-              edge_case_handling: 9,
-              explanation: 9
-            },
-            artifacts: {
-              question: "Merge Two Sorted Arrays - Merge two sorted arrays into one sorted array",
-              code: "function mergeSortedArrays(arr1, arr2) {\n  const result = [];\n  let i = 0, j = 0;\n  \n  while (i < arr1.length && j < arr2.length) {\n    if (arr1[i] <= arr2[j]) {\n      result.push(arr1[i++]);\n    } else {\n      result.push(arr2[j++]);\n    }\n  }\n  \n  while (i < arr1.length) result.push(arr1[i++]);\n  while (j < arr2.length) result.push(arr2[j++]);\n  \n  return result;\n}",
-              explanation: "Used two pointers to merge arrays in O(n+m) time while maintaining sorted order.",
-              test_results: { passed: 18, failed: 0, total: 18 }
-            },
-            notes: "Excellent solution with optimal time complexity. Handled all edge cases perfectly and provided clear explanation."
-          },
-          cs: {
-            score: 7,
-            criteria: {
-              algorithms: 7,
-              complexity: 7
-            },
-            notes: 'Good algorithmic understanding; could improve on complexity trade-offs.'
-          },
-          behavioral: {
-            score: 8,
-            criteria: {
-              communication: 8,
-              collaboration: 8
-            },
-            notes: 'Strong communicator and team fit.'
-          }
-        }
+export default function TestReportPage() {
+  // Fake data for testing
+  const reportData: ReportData = {
+    type: 'full',
+    generatedAt: new Date().toISOString(),
+    scoring: {
+      candidate_id: "test-session-123",
+      interview_id: "interview-456",
+      overall: {
+        final_score: 82,
+        recommendation: 'Hire',
+        strengths: ['Excellent problem-solving skills', 'Strong communication abilities', 'Good technical knowledge', 'Team player attitude'],
+        weaknesses: ['Could improve time management', 'Needs more experience with advanced algorithms']
       },
-      recommendation: {
-        recommendations: [
-          {
-            category: 'Technical Skills',
-            strengths: ['Solid fundamentals', 'Good problem solving'],
-            areasOfImprovement: ['Unit testing', 'Performance optimization'],
-            actionableTips: ['Write unit tests for edge cases', 'Consider algorithmic complexity for large inputs'],
-            resources: ['Cracking the Coding Interview', 'LeetCode - Top Interview Questions'],
-            overallSummary: 'Candidate demonstrates strong core technical abilities but should add more thorough testing and optimization.'
+      communication_skills: {
+        verbal_clarity: 9,
+        articulation: 8,
+        listening_skills: 9,
+        empathy: 8,
+        persuasion: 7,
+        active_listening: 9,
+        overall_communication_score: 8
+      },
+      stages: {
+        greeting: {
+          score: 8,
+          criteria: {
+            confidence: 8,
+            communication: 9,
+            professionalism: 8,
+            engagement: 7
           },
-          {
-            category: 'Communication & Collaboration',
-            strengths: ['Explains thought process clearly'],
-            areasOfImprovement: ['Ask clarifying questions earlier'],
-            actionableTips: ['Practice stating assumptions at the start of the problem'],
-            resources: ['Effective Communication in Tech Teams'],
-            overallSummary: 'Good interpersonal skills and clear explanations.'
-          }
-        ],
-        finalAdvice: 'Overall, recommend hire for mid-level engineering role with mentorship on testing and performance.'
+          notes: "Candidate presented themselves confidently with clear and professional communication. Showed good engagement throughout the introduction."
+        },
+        resume_discussion: {
+          score: 7,
+          criteria: {
+            relevance_of_experience: 8,
+            depth_of_projects: 7,
+            clarity_in_explanation: 8,
+            technical_alignment: 6
+          },
+          notes: "Demonstrated relevant experience with good project explanations. Could elaborate more on technical challenges faced."
+        },
+        coding_round: {
+          score: 8,
+          criteria: {
+            problem_solving: 8,
+            code_correctness: 9,
+            optimization: 7,
+            readability: 8,
+            edge_case_handling: 7,
+            explanation: 8
+          },
+          artifacts: {
+            question: "Two Sum Problem - Find two numbers in an array that add up to a target sum",
+            code: "function twoSum(nums, target) {\n  const map = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const complement = target - nums[i];\n    if (map.has(complement)) {\n      return [map.get(complement), i];\n    }\n    map.set(nums[i], i);\n  }\n  return [];\n}",
+            explanation: "Used a hash map to store indices and their complements for O(n) time complexity.",
+            test_results: { passed: 15, failed: 2, total: 17 }
+          },
+          notes: "Solved the problem efficiently with clean, readable code. Handled most edge cases but missed a few boundary conditions."
+        },
+        coding_round_2: {
+          score: 7,
+          criteria: {
+            problem_solving: 7,
+            code_correctness: 8,
+            optimization: 6,
+            readability: 7,
+            edge_case_handling: 6,
+            explanation: 7
+          },
+          artifacts: {
+            question: "Valid Parentheses - Check if a string of parentheses is valid",
+            code: "function isValid(s) {\n  const stack = [];\n  const map = {\n    '(': ')',\n    '[': ']',\n    '{': '}'\n  };\n  \n  for (let char of s) {\n    if (map[char]) {\n      stack.push(char);\n    } else {\n      if (stack.length === 0 || map[stack.pop()] !== char) {\n        return false;\n      }\n    }\n  }\n  \n  return stack.length === 0;\n}",
+            explanation: "Used a stack to track opening brackets and validate closing brackets in order.",
+            test_results: { passed: 12, failed: 3, total: 15 }
+          },
+          notes: "Good understanding of stack data structure. Solution works but could be more optimized for edge cases."
+        },
+        coding_round_3: {
+          score: 9,
+          criteria: {
+            problem_solving: 9,
+            code_correctness: 9,
+            optimization: 8,
+            readability: 9,
+            edge_case_handling: 9,
+            explanation: 9
+          },
+          artifacts: {
+            question: "Merge Two Sorted Arrays - Merge two sorted arrays into one sorted array",
+            code: "function mergeSortedArrays(arr1, arr2) {\n  const result = [];\n  let i = 0, j = 0;\n  \n  while (i < arr1.length && j < arr2.length) {\n    if (arr1[i] <= arr2[j]) {\n      result.push(arr1[i++]);\n    } else {\n      result.push(arr2[j++]);\n    }\n  }\n  \n  while (i < arr1.length) result.push(arr1[i++]);\n  while (j < arr2.length) result.push(arr2[j++]);\n  \n  return result;\n}",
+            explanation: "Used two pointers to merge arrays in O(n+m) time while maintaining sorted order.",
+            test_results: { passed: 18, failed: 0, total: 18 }
+          },
+          notes: "Excellent solution with optimal time complexity. Handled all edge cases perfectly and provided clear explanation."
+        },
+        technical_cs_round: {
+          score: 7,
+          criteria: {
+            core_cs_fundamentals: 8,
+            system_design: 6,
+            algorithms_and_ds: 8,
+            ml_ai_domain_knowledge: 5,
+            clarity_and_depth: 7
+          },
+          qna: [
+            {
+              question: "Explain the difference between TCP and UDP",
+              answer: "TCP is connection-oriented with reliable delivery, while UDP is connectionless with faster but unreliable transmission.",
+              evaluation: {
+                accuracy: 8,
+                depth: 7,
+                clarity: 8
+              }
+            }
+          ],
+          notes: "Strong fundamentals in core CS concepts. System design knowledge needs more depth, particularly in scalability considerations."
+        },
+        behavioral_round: {
+          score: 9,
+          criteria: {
+            teamwork: 9,
+            leadership: 8,
+            conflict_resolution: 9,
+            adaptability: 8,
+            culture_fit: 9,
+            communication: 9
+          },
+          qna: [
+            {
+              question: "Tell me about a time you resolved a conflict in your team",
+              answer: "I facilitated a meeting where team members could voice their concerns, then helped find a compromise solution that satisfied everyone.",
+              evaluation: {
+                accuracy: 9,
+                depth: 8,
+                clarity: 9
+              }
+            }
+          ],
+          notes: "Excellent behavioral responses showing strong teamwork and leadership qualities. Demonstrated empathy and effective communication throughout."
+        },
+        wrap_up: {
+          score: 8,
+          criteria: {
+            final_impression: 9,
+            questions_asked: 7,
+            closing_communication: 8
+          },
+          notes: "Left a very positive final impression. Asked thoughtful questions about the role and company culture."
+        }
       }
-    };
-
-    setReportData(sample);
+    },
+    recommendation: {
+      recommendations: [
+        {
+          category: 'Technical Skills Development',
+          strengths: ['Solid coding fundamentals', 'Good problem-solving approach', 'Clean code practices'],
+          areasOfImprovement: ['Advanced algorithm optimization', 'System design principles', 'Performance tuning'],
+          actionableTips: ['Practice LeetCode hard problems weekly', 'Study system design patterns', 'Learn performance profiling tools'],
+          resources: ['"Designing Data-Intensive Applications" by Martin Kleppmann', 'System Design Interview course', 'Performance optimization workshops'],
+          overallSummary: 'Candidate has strong technical foundations but should focus on advanced topics for senior-level roles.'
+        },
+        {
+          category: 'Communication & Soft Skills',
+          strengths: ['Excellent verbal communication', 'Active listening skills', 'Empathy in interactions'],
+          areasOfImprovement: ['Presentation skills for technical topics', 'Persuasive communication in meetings'],
+          actionableTips: ['Practice technical presentations', 'Join Toastmasters for public speaking', 'Take communication skills workshops'],
+          resources: ['"Crucial Conversations" book', 'Toastmasters International', 'LinkedIn Learning communication courses'],
+          overallSummary: 'Outstanding communication skills with room for growth in technical presentation abilities.'
+        },
+        {
+          category: 'Leadership & Teamwork',
+          strengths: ['Natural leadership qualities', 'Team collaboration skills', 'Conflict resolution abilities'],
+          areasOfImprovement: ['Mentoring junior developers', 'Project management skills'],
+          actionableTips: ['Volunteer to mentor new team members', 'Take project management certification', 'Lead small team initiatives'],
+          resources: ['Scrum Master certification', 'Leadership development programs', 'Mentorship training courses'],
+          overallSummary: 'Strong leadership potential that should be nurtured through mentorship and project leadership opportunities.'
+        }
+      ],
+      finalAdvice: 'Highly recommend hiring this candidate for a mid-level software engineering position. They demonstrate excellent technical skills, outstanding communication abilities, and strong teamwork qualities. With some mentorship in advanced technical areas, they have the potential to grow into senior engineering roles within 1-2 years.'
+    }
   };
 
   const renderScoring = (scoring: any) => (
@@ -438,143 +476,35 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="relative z-10 px-6 py-4 border-b border-gray-800/50 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-3xl font-bold accent-text">Interview Reports</h1>
-          <p className="text-gray-400 mt-2">Generate and view detailed interview analysis reports</p>
+          <h1 className="text-3xl font-bold accent-text">
+            Interview Report Test Page
+          </h1>
+          <p className="text-gray-400 mt-2">Demo of the enhanced interview scoring with communication skills analysis</p>
         </div>
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto p-4">
-        {/* Report Generation Form */}
-        <div className="glass-surface rounded-2xl p-8 mb-8">
-          <h2 className="text-2xl font-semibold accent-text mb-6">Generate Report</h2>
-          
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
+        {/* Report Header */}
+        <div className="glass-surface rounded-2xl p-6 mb-8">
+          <div className="flex justify-between items-center">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Session ID
-              </label>
-              <input
-                type="text"
-                value={sessionId}
-                onChange={(e) => setSessionId(e.target.value)}
-                placeholder="Enter session ID..."
-                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-black placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-              />
+              <h2 className="text-2xl font-semibold accent-text">Sample Interview Report</h2>
+              <p className="text-gray-400">Generated on {new Date(reportData.generatedAt).toLocaleString()}</p>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Resume File Path
-              </label>
-              <input
-                type="text"
-                value={resumeFilePath}
-                onChange={(e) => setResumeFilePath(e.target.value)}
-                placeholder="Enter resume file path..."
-                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-black placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-              />
-            </div>
-          </div>
-          
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Report Type
-            </label>
-            <select
-              value={reportType}
-              onChange={(e) => setReportType(e.target.value as 'scoring' | 'recommendation' | 'full')}
-              className="bg-white border border-gray-300 rounded-lg px-4 py-3 text-black focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-            >
-              <option value="full">Full Report (Scoring + Recommendations)</option>
-              <option value="scoring">Scoring Only</option>
-              <option value="recommendation">Recommendations Only</option>
-            </select>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={handleGenerateReport}
-              disabled={loading || !sessionId.trim() || !resumeFilePath.trim()}
-              className="btn-electric text-lg px-8 py-3 group disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span className="flex items-center space-x-2">
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    <span>Generating Report...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Generate Report</span>
-                    <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                  </>
-                )}
-              </span>
-            </button>
-
-            <button
-              onClick={loadSampleReport}
-              type="button"
-              className="btn-outline text-lg px-6 py-3 group"
-            >
-              <span className="flex items-center space-x-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <span>Load Sample Report</span>
-              </span>
-            </button>
+            <span className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 rounded-full text-sm font-medium text-white shadow-lg">
+              {reportData.type.toUpperCase()} REPORT
+            </span>
           </div>
         </div>
 
-        {/* Error Display */}
-        {error && (
-          <div className="glass-surface rounded-2xl p-6 mb-8 border border-red-200">
-            <div className="flex items-center space-x-3">
-              <div className="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
-                <span className="text-white text-sm">!</span>
-              </div>
-              <div>
-                <div className="text-red-700 font-semibold">Error</div>
-                <div className="text-red-600 text-sm">{error}</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Loading Indicator */}
-        {loading && (
-          <div className="glass-surface rounded-2xl p-12 text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-6"></div>
-            <p className="text-gray-600 text-lg">Generating report...</p>
-          </div>
-        )}
-
         {/* Report Display */}
-        {reportData && !loading && (
-          <div className="space-y-8">
-            {/* Report Header */}
-            <div className="glass-surface rounded-2xl p-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-2xl font-semibold accent-text">Interview Report</h2>
-                  <p className="text-gray-600">Generated on {new Date(reportData.generatedAt).toLocaleString()}</p>
-                </div>
-                <span className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 rounded-full text-sm font-medium text-white shadow-lg">
-                  {reportData.type.toUpperCase()} REPORT
-                </span>
-              </div>
-            </div>
+        <div className="space-y-6">
+          {/* Scoring Section */}
+          {reportData.scoring && renderScoring(reportData.scoring)}
 
-            {/* Scoring Section */}
-            {reportData.scoring && renderScoring(reportData.scoring)}
-
-            {/* Recommendations Section */}
-            {reportData.recommendation && renderRecommendations(reportData.recommendation)}
-          </div>
-        )}
+          {/* Recommendations Section */}
+          {reportData.recommendation && renderRecommendations(reportData.recommendation)}
+        </div>
       </div>
     </div>
   );
