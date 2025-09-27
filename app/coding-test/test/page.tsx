@@ -322,8 +322,14 @@ export default function CodingTest() {
                   <h3 className="font-bold mb-4 text-xl">Run Results</h3>
                   <div className="space-y-4">
                     {(result.run_outputs as any[]).map((output: any, index: number) => {
-                      const actual = output.output?.stdout?.trim() || output.output?.trim() || '';
-                      const expected = output.expected?.trim() || '';
+                      const getOutputString = (out: any): string => {
+                        if (typeof out === 'string') return out.trim();
+                        if (out?.stdout) return String(out.stdout).trim();
+                        if (out?.stderr) return String(out.stderr).trim();
+                        return String(out || '').trim();
+                      };
+                      const actual = getOutputString(output.output);
+                      const expected = String(output.expected || '').trim();
                       const passed = actual === expected;
                       return (
                         <div key={index} className="border rounded p-3">
@@ -340,7 +346,7 @@ export default function CodingTest() {
                             <div>
                               <strong>Actual:</strong>
                               <pre className={`p-1 rounded mt-1 ${passed ? 'bg-green-100' : 'bg-red-100'}`}>
-                                {output.output?.stdout || output.output?.stderr || JSON.stringify(output.output)}
+                                {getOutputString(output.output)}
                               </pre>
                             </div>
                           </div>

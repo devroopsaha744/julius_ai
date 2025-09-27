@@ -9,16 +9,49 @@ import { CuratorOutputSchema, CuratorOutput } from "../models/models";
 import { zodResponseFormat } from "openai/helpers/zod";
 import fs from "fs";
 import path from "path";
+import { MongoClient } from "mongodb";
 
 class CodingCurator {
-  private prompt: string;
+   private prompt: string = "";
 
   constructor() {
+    // Prompt will be loaded lazily
+  }
+
+  private async getPrompt(): Promise<string> {
+    if (this.prompt) return this.prompt;
+
+    // Try to load custom prompt first
+    try {
+      const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/julis-ai';
+      const client = new MongoClient(mongoUri);
+      await client.connect();
+      const db = client.db();
+      const collection = db.collection('recruiter_configs');
+
+      const recruiterId = 'default_recruiter';
+      const config = await collection.findOne({ recruiterId });
+
+      if (config?.prompts?.coding) {
+        await client.close();
+        this.prompt = config.prompts.coding;
+        return this.prompt;
+      }
+
+      await client.close();
+    } catch (error) {
+      console.error('Failed to load custom coding prompt, using default:', error);
+    }
+
+    // Fall back to default prompt
     const promptPath = path.join(process.cwd(), "lib", "prompts", "coding_curator.txt");
     this.prompt = fs.readFileSync(promptPath, "utf-8");
+    return this.prompt;
   }
 
   async curate(): Promise<CuratorOutput> {
+    const prompt = await this.getPrompt();
+
     const tags = [
       "array", "string", "dynamic-programming", "binary-tree", "graph",
       "linked-list", "backtracking", "greedy", "binary-search", "heap",
@@ -43,10 +76,10 @@ class CodingCurator {
 
     const userContent = `Generate exactly 3 coding problems based on these combinations: ${JSON.stringify(combos)}. Return null for starter_template if none.`;
 
-    const completion = await groqClient.chat.completions.parse({
+    const completion = await groqClient.chat.completions.create({
       model: "moonshotai/kimi-k2-instruct-0905",
       messages: [
-        { role: "system", content: this.prompt },
+        { role: "system", content: prompt },
         { role: "user", content: userContent }
       ],
       temperature: 0.9,

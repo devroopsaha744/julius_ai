@@ -17,34 +17,34 @@ export default function Home() {
 
   const features = [
     {
-      icon: "🎤",
-      title: "Real-time Voice Interaction",
-      description: "Natural conversation with AI using advanced speech recognition"
+      icon: "⚡",
+      title: "Automated Screening",
+      description: "AI conducts initial technical interviews, saving hours of manual work"
     },
     {
-      icon: "💻",
-      title: "Live Code Editor",
-      description: "Beautiful coding interface for recruiters"
+      icon: "🎯",
+      title: "Consistent Evaluation",
+      description: "Standardized assessment criteria eliminate bias and ensure fair hiring"
     },
     {
-      icon: "🧠",
-      title: "Intelligent Assessment",
-      description: "Comprehensive evaluation across technical and soft skills"
-    },
-    {
-      icon: "📊",
+      icon: "📈",
       title: "Detailed Analytics",
-      description: "Performance insights with actionable recommendations"
+      description: "Comprehensive reports with scores, feedback, and hiring recommendations"
+    },
+    {
+      icon: "🔄",
+      title: "Scalable Process",
+      description: "Handle multiple candidates simultaneously with automated workflows"
     }
   ];
 
-  // Removed 'Coding' stage from visible UI for recruiters per request
+  // Interview stages from recruiter's perspective
   const stages = [
-    { name: "Greeting", status: "completed", description: "Welcome & Introduction" },
-    { name: "Resume", status: "completed", description: "Background Review" },
-    { name: "Computer Science", status: "pending", description: "CS Fundamentals" },
-    { name: "Behavioral", status: "pending", description: "Cultural Fit" },
-    { name: "Wrap-up", status: "pending", description: "Closing & Next Steps" }
+    { name: "Setup", status: "completed", description: "Configure interview parameters" },
+    { name: "Candidate Screening", status: "completed", description: "Automated initial assessment" },
+    { name: "Technical Evaluation", status: "pending", description: "In-depth skill testing" },
+    { name: "Report Generation", status: "pending", description: "AI-powered analysis" },
+    { name: "Decision Support", status: "pending", description: "Hiring recommendations" }
   ];
 
   // Simple client-side user state
@@ -160,8 +160,9 @@ export default function Home() {
             <Link href="#features" className="muted hover:text-black transition-colors">Features</Link>
             <Link href="#demo" className="muted hover:text-black transition-colors">Demo</Link>
             <Link href="#process" className="muted hover:text-black transition-colors">Process</Link>
-            <Link href="/interview" className="btn-primary">Start Interview</Link>
-            <Link href="/coding" className="btn-outline">Recruiter Coding</Link>
+            <Link href="/recruiter" className="btn-primary">Recruiter Dashboard</Link>
+            <Link href="/coding" className="btn-outline">Coding Test Builder</Link>
+            <Link href="/interviews" className="btn-outline">View Interviews</Link>
             {/* Google Sign-in area */}
             {typeof window !== 'undefined' && (
               <div id="gsi-root" className="flex items-center space-x-4">
@@ -193,29 +194,40 @@ export default function Home() {
               <span className="accent-text">Julius AI</span>
               <br />
               <span className="text-3xl md:text-4xl muted font-normal">
-                Recruiter-friendly technical interviews
+                Automate Your Technical Interviews
               </span>
             </h1>
-            
+
               <p className="text-lg md:text-xl muted max-w-3xl mx-auto leading-relaxed">
-                A lean and powerful platform for recruiters — prioritizing clarity, fast screening, and beautiful coding experiences.
+                Streamline your hiring process with AI-powered interviews. Save time, reduce bias, and find top talent faster with intelligent assessment and detailed analytics.
               </p>
           </div>
 
           {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-20">
-            {user ? (
-              <Link href="/interview">
-                <button className="btn-electric text-xl px-12 py-4 group">
-                  <span className="flex items-center space-x-3">
-                    <span>Start Your Interview</span>
-                    <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                  </span>
-                </button>
-              </Link>
-            ) : (
+            <Link href="/interview">
+              <button className="btn-electric text-xl px-12 py-4 group">
+                <span className="flex items-center space-x-3">
+                  <span>Start Interview</span>
+                  <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </span>
+              </button>
+            </Link>
+
+            <Link href="/recruiter">
+              <button className="btn-outline text-xl px-12 py-4 group">
+                <span className="flex items-center space-x-3">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                  </svg>
+                  <span>Create Custom Questions</span>
+                </span>
+              </button>
+            </Link>
+
+            {!user && (
               <button
                 onClick={() => {
                   // Trigger Google Sign-In
@@ -227,46 +239,35 @@ export default function Home() {
                     window.location.href = '/profile';
                   }
                 }}
-                className="btn-electric text-xl px-12 py-4 group"
+                className="btn-outline text-xl px-12 py-4 group"
               >
                 <span className="flex items-center space-x-3">
-                  <span>Sign In to Start Interview</span>
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                   </svg>
+                  <span>Sign In</span>
                 </span>
               </button>
             )}
-            
-            <Link href="#demo">
-              <button className="btn-outline text-xl px-12 py-4 group">
-                <span className="flex items-center space-x-3">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.5a1.5 1.5 0 011.5 1.5V13M4.5 19.5h15" />
-                  </svg>
-                  <span>Watch Demo</span>
-                </span>
-              </button>
-            </Link>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 glass-surface rounded-2xl p-8">
             <div className="text-center">
-              <div className="text-3xl font-bold accent-text">6</div>
-              <div className="muted">Interview Stages</div>
+              <div className="text-3xl font-bold accent-text">80%</div>
+              <div className="muted">Time Saved</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold electric-text">10+</div>
-              <div className="text-gray-400">Programming Languages</div>
+              <div className="text-3xl font-bold electric-text">500+</div>
+              <div className="text-gray-400">Candidates Assessed</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold electric-text">AI</div>
-              <div className="text-gray-400">Powered Assessment</div>
+              <div className="text-gray-400">Powered Screening</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold electric-text">Real-time</div>
-              <div className="text-gray-400">Voice Interaction</div>
+              <div className="text-3xl font-bold electric-text">24/7</div>
+              <div className="text-gray-400">Automated Interviews</div>
             </div>
           </div>
         </div>
@@ -306,10 +307,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-5xl font-bold mb-6">
-              <span className="accent-text">Interview Journey</span>
+              <span className="accent-text">Automated Hiring Workflow</span>
             </h2>
             <p className="text-xl text-gray-400 max-w-3xl mx-auto">
-              Follow the intelligent flow designed to assess every aspect of your technical expertise
+              Streamlined process that handles candidate screening, evaluation, and reporting with minimal recruiter intervention
             </p>
           </div>
 
@@ -366,10 +367,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-5xl font-bold mb-6">
-              <span className="accent-text">See It In Action</span>
+              <span className="accent-text">See the Automation in Action</span>
             </h2>
             <p className="text-xl text-gray-400 max-w-3xl mx-auto">
-              Watch how Julius AI conducts comprehensive technical interviews with natural conversation and intelligent assessment
+              Watch how Julius AI transforms your hiring process with intelligent candidate screening and comprehensive evaluation
             </p>
           </div>
 
@@ -380,13 +381,20 @@ export default function Home() {
                   <path d="M8 5v14l11-7z"/>
                 </svg>
               </div>
-              <h3 className="text-2xl font-bold mb-4 accent-text">Interactive Demo</h3>
-              <p className="text-gray-400 mb-8">Experience the full interview flow with sample questions and real-time feedback</p>
-              <Link href="/demo">
-                <button className="btn-electric text-lg px-8 py-3">
-                  Launch Demo
-                </button>
-              </Link>
+              <h3 className="text-2xl font-bold mb-4 accent-text">Watch Julius AI in Action</h3>
+              <p className="text-gray-400 mb-8">See how Julius AI conducts comprehensive technical interviews with intelligent assessment</p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="https://youtu.be/gQ2PJVzWenE?si=your-share-link" target="_blank" rel="noopener noreferrer">
+                  <button className="btn-electric text-lg px-8 py-3">
+                    Watch YouTube Demo
+                  </button>
+                </a>
+                <Link href="/demo">
+                  <button className="btn-outline text-lg px-8 py-3">
+                    Try Interactive Demo
+                  </button>
+                </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -404,14 +412,14 @@ export default function Home() {
                 <span className="text-2xl font-bold accent-text">Julius AI</span>
               </div>
               <p className="muted max-w-md">
-                Revolutionizing technical interviews with recruiter-friendly experiences and clear analytics.
+                Empowering recruiters with AI-driven automation to streamline technical hiring and find top talent efficiently.
               </p>
             </div>
             
             <div>
               <h4 className="text-lg font-semibold mb-4 text-purple-500">Product</h4>
               <ul className="space-y-2 text-gray-600">
-                <li><Link href="/interview" className="hover:text-purple-500 transition-colors">Start Interview</Link></li>
+                <li><Link href="/recruiter" className="hover:text-purple-500 transition-colors">Dashboard</Link></li>
                 <li><Link href="/demo" className="hover:text-purple-500 transition-colors">Demo</Link></li>
                 <li><Link href="#features" className="hover:text-purple-500 transition-colors">Features</Link></li>
               </ul>
