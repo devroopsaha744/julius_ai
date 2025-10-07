@@ -5,6 +5,10 @@ import { InterviewWebSocketClient, uploadResume, getInterviewStage, generateRepo
 import { testWebSocketConnection, diagnoseConnectionIssue, getWebSocketServerInstructions } from '@/lib/utils/websocketHealth';
 import { InterviewStage } from '@/lib/services/orchestrator';
 import CodeEditor from '@/app/components/CodeEditor';
+import { Mic, MicOff, CheckCircle, X, Lightbulb, Zap, Volume2, VolumeX, Play, Square, Upload, FileText, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 interface Message {
   id: string;
@@ -196,7 +200,7 @@ export default function InterviewInterface() {
           utterance.onend = () => {
             setState(prev => ({ ...prev, isPlayingAudio: false }));
             if (clientRef.current) clientRef.current.notifyAudioPlaybackFinished();
-            addSystemMessage('🎤 Ready to listen - you can speak now');
+            addSystemMessage('Ready to listen - you can speak now');
             if (!state.isTranscribing && state.isConnected) {
               setTimeout(() => startTranscription(), 500);
             }
@@ -248,7 +252,7 @@ export default function InterviewInterface() {
 
       client.on('microphone_enabled', (data: any) => {
         console.log('Microphone enabled:', data.message);
-        addSystemMessage('✅ You can now speak');
+        addSystemMessage('You can now speak');
       });
 
       client.on('transcription_blocked', (data: any) => {
@@ -433,9 +437,9 @@ export default function InterviewInterface() {
             clientRef.current.notifyAudioPlaybackFinished();
           }
           
-          // 🎯 AUTO-RESUME TRANSCRIPTION AFTER JULIUS STOPS SPEAKING
-          console.log('🎤 Audio playback finished - auto-resuming transcription');
-          addSystemMessage('🎤 Ready to listen - you can speak now');
+          // AUTO-RESUME TRANSCRIPTION AFTER JULIUS STOPS SPEAKING
+          console.log('Audio playback finished - auto-resuming transcription');
+          addSystemMessage('Ready to listen - you can speak now');
           
           // Auto-start transcription if not already running
           if (!state.isTranscribing && state.isConnected) {
@@ -455,9 +459,9 @@ export default function InterviewInterface() {
         clientRef.current.notifyAudioPlaybackFinished();
       }
       
-      // 🎯 AUTO-RESUME TRANSCRIPTION EVEN ON AUDIO ERROR
-      console.log('🎤 Audio error - auto-resuming transcription');
-      addSystemMessage('🎤 Ready to listen - you can speak now');
+      // AUTO-RESUME TRANSCRIPTION EVEN ON AUDIO ERROR
+      console.log('Audio error - auto-resuming transcription');
+      addSystemMessage('Ready to listen - you can speak now');
       
       // Auto-start transcription if not already running
       if (!state.isTranscribing && state.isConnected) {
@@ -525,56 +529,56 @@ export default function InterviewInterface() {
 
   const startTranscription = async () => {
     try {
-      console.log('🎤 Starting audio capture...');
-      
+      console.log('Starting audio capture...');
+
       // Request microphone access with specific audio constraints
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
           sampleRate: 16000,
           channelCount: 1
-        } 
+        }
       });
-      
-      console.log('✅ Microphone access granted');
-      
+
+      console.log('Microphone access granted');
+
       // Create AudioContext for audio processing
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
         sampleRate: 16000
       });
-      
+
       const source = audioContext.createMediaStreamSource(stream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      
+
       let isProcessing = true;
-      
+
       // Process audio data and send to server
       processor.onaudioprocess = (event) => {
         if (!isProcessing || !clientRef.current) return;
-        
+
         const inputData = event.inputBuffer.getChannelData(0);
-        
+
         // Convert Float32Array to Int16Array (PCM 16-bit)
         const pcmData = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
           const sample = Math.max(-1, Math.min(1, inputData[i]));
           pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
         }
-        
+
         // Send PCM data to server
         clientRef.current.sendAudioChunk(pcmData.buffer);
       };
-      
+
       source.connect(processor);
       processor.connect(audioContext.destination);
-      
+
       // Store cleanup function
       mediaRecorderRef.current = {
         stream,
         stop: () => {
-          console.log('🔇 Stopping audio capture...');
+          console.log('Stopping audio capture...');
           isProcessing = false;
           stream.getTracks().forEach(track => track.stop());
           processor.disconnect();
@@ -586,10 +590,10 @@ export default function InterviewInterface() {
       // Start transcription on server
       clientRef.current?.startTranscription();
       setState(prev => ({ ...prev, isTranscribing: true }));
-      addSystemMessage('🎤 Voice recording started - speak now!');
-      
+      addSystemMessage('Voice recording started - speak now!');
+
     } catch (error) {
-      console.error('❌ Microphone access error:', error);
+      console.error('Microphone access error:', error);
       setError('Microphone access denied. Please allow microphone access and try again.');
     }
   };
@@ -601,7 +605,7 @@ export default function InterviewInterface() {
     clientRef.current?.stopTranscription();
     setState(prev => ({ ...prev, isTranscribing: false }));
     setCurrentTranscript('');
-    addSystemMessage('🔇 Voice recording stopped');
+    addSystemMessage('Voice recording stopped');
   };
 
   const sendTextMessage = () => {
@@ -817,8 +821,9 @@ export default function InterviewInterface() {
                 </button>
               </div>
               {showCodeEditor && (
-                <div className="mt-2 text-xs text-purple-600">
-                  💡 Use this to ask questions about the problem. Submit your code solution using the editor below.
+                <div className="mt-2 text-xs text-purple-600 flex items-center">
+                  <Lightbulb className="w-3 h-3 mr-1" />
+                  Use this to ask questions about the problem. Submit your code solution using the editor below.
                 </div>
               )}
             </div>
@@ -910,9 +915,7 @@ export default function InterviewInterface() {
               </div>
             ) : (
               <div className="flex items-center space-x-2 text-green-400">
-                <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs">✓</span>
-                </div>
+                <CheckCircle className="w-5 h-5 text-green-500" />
                 <span className="text-sm">Resume uploaded successfully</span>
               </div>
             )}
@@ -999,9 +1002,22 @@ export default function InterviewInterface() {
                               isPassed ? 'bg-purple-900/30 text-purple-400 border border-purple-400/20' :
                               'bg-purple-900/30 text-purple-400 border border-purple-400/30 purple-glow'
                             }`}>
-                              {isCompleted ? '✓ Complete' :
-                               isPassed ? '✓ Passed' :
-                               '⚡ Current'}
+                              {isCompleted ? (
+                                <>
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Complete
+                                </>
+                              ) : isPassed ? (
+                                <>
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Passed
+                                </>
+                              ) : (
+                                <>
+                                  <Zap className="w-3 h-3 mr-1" />
+                                  Current
+                                </>
+                              )}
                             </div>
                           )}
                         </div>

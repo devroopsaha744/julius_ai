@@ -1,5 +1,9 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { Sparkles, User, Calendar, CheckCircle2 } from 'lucide-react';
+import ModernHeader from '../components/ModernHeader';
+import AnimatedBackground from '../components/AnimatedBackground';
 
 type InterviewSummary = {
   _id: string;
@@ -81,72 +85,157 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-black p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 hero-accent rounded-lg flex items-center justify-center overflow-hidden">
-            <div style={{ width: 28, height: 28, borderRadius: 6, background: '#6B21A8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: 'white', fontWeight: 700 }}>JA</span>
+    <div className="min-h-screen bg-gradient-to-br from-white via-purple-50/30 to-blue-50/30 text-gray-900 overflow-hidden relative">
+      <AnimatedBackground />
+      <ModernHeader title="Your Profile" />
+      
+      <div className="relative z-10 p-6">
+        <div className="max-w-5xl mx-auto space-y-6">
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center mb-8"
+          >
+            <div className="inline-flex items-center space-x-2 px-4 py-2 bg-purple-100/80 backdrop-blur-sm rounded-full mb-4 border border-purple-200/50">
+              <User className="w-4 h-4 text-purple-600" />
+              <span className="text-sm font-semibold text-purple-700">Profile Management</span>
             </div>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Profile</h1>
-            <div className="text-xs text-gray-500">Manage your account and view past interviews</div>
-          </div>
-        </div>
+            <h1 className="text-5xl font-bold mb-3">
+              <span className="bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                Your Profile
+              </span>
+            </h1>
+            <p className="text-lg text-gray-600">
+              Manage your account and view past interviews
+            </p>
+          </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="glass-effect p-4 rounded-xl">
-            {!idToken && (
-              <div>
-                <div id="gsi"></div>
-                <p className="text-sm text-gray-600 mt-3">Click the Google Sign-In button to authenticate.</p>
-              </div>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl border border-gray-200/50 shadow-lg"
+            >
+              {!idToken && (
+                <div>
+                  <div id="gsi" className="mb-4"></div>
+                  <p className="text-sm text-gray-600">Click the Google Sign-In button to authenticate.</p>
+                </div>
+              )}
 
-            {idToken && !user && <p className="text-sm text-gray-600">Signing in...</p>}
+              {idToken && !user && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                  <p className="text-sm text-gray-600 ml-3">Signing in...</p>
+                </div>
+              )}
 
-            {user && (
-              <div className="space-y-3">
-                <img src={user.picture} alt="avatar" width={72} height={72} className="rounded-lg" />
-                <div className="text-lg font-medium">{user.name}</div>
-                <div className="text-sm text-gray-600">{user.email}</div>
-                <button onClick={signOut} className="mt-2 btn-outline px-3 py-2">Sign out</button>
-              </div>
-            )}
-          </div>
-
-          <div className="md:col-span-2 space-y-4">
-            <div className="glass-effect p-4 rounded-xl">
-              <h3 className="font-semibold text-lg">Your Interviews</h3>
-              {interviews.length === 0 && <p className="text-sm text-gray-600 mt-2">No interviews yet.</p>}
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {interviews.map((interview) => (
-                  <div key={interview._id} className="p-4 rounded-lg border border-gray-200 hover:shadow-md cursor-pointer" onClick={() => setSelectedInterview(interview)}>
-                    <div className="font-medium text-gray-800">Interview {interview.sessionId}</div>
-                    <div className="text-xs text-gray-500 mt-1">{new Date(interview.createdAt || '').toLocaleString()}</div>
-                    <div className="text-xs mt-2">
-                      <span className={`px-2 py-1 rounded ${interview.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                        {interview.status}
-                      </span>
-                    </div>
+              {user && (
+                <div className="space-y-4">
+                  <div className="relative">
+                    <img 
+                      src={user.picture} 
+                      alt="avatar" 
+                      width={96} 
+                      height={96} 
+                      className="rounded-2xl mx-auto shadow-lg border-4 border-purple-200" 
+                    />
                   </div>
-                ))}
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-gray-900">{user.name}</div>
+                    <div className="text-sm text-gray-600">{user.email}</div>
+                  </div>
+                  <button 
+                    onClick={signOut} 
+                    className="w-full px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-xl font-medium hover:from-red-600 hover:to-pink-600 transition-all shadow-lg"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+              className="md:col-span-2 space-y-4"
+            >
+              <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl border border-gray-200/50 shadow-lg">
+                <h3 className="font-semibold text-2xl mb-4 bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                  Your Interviews
+                </h3>
+                {interviews.length === 0 && (
+                  <p className="text-sm text-gray-600 mt-2">No interviews yet. Start your first interview!</p>
+                )}
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {interviews.map((interview, idx) => (
+                    <motion.div
+                      key={interview._id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="p-4 rounded-xl border border-gray-200 bg-gradient-to-br from-white to-purple-50/30 hover:shadow-lg hover:border-purple-300 cursor-pointer transition-all"
+                      onClick={() => setSelectedInterview(interview)}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-medium text-gray-900">Interview #{interview.sessionId.slice(0, 8)}</div>
+                        <Calendar className="w-4 h-4 text-gray-500" />
+                      </div>
+                      <div className="text-xs text-gray-500 mb-3">
+                        {new Date(interview.createdAt || '').toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric', 
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          interview.status === 'completed' 
+                            ? 'bg-green-100 text-green-700 border border-green-200' 
+                            : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                        }`}>
+                          {interview.status === 'completed' && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
+                          {interview.status}
+                        </span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
-            </div>
+            </motion.div>
           </div>
         </div>
       </div>
 
       {/* Interview Report Modal */}
       {selectedInterview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold">Interview Report</h2>
-                <button onClick={() => setSelectedInterview(null)} className="text-gray-500 hover:text-gray-700">×</button>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+          >
+            <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 rounded-t-2xl">
+              <div className="flex justify-between items-center">
+                <h2 className="text-3xl font-bold">Interview Report</h2>
+                <button 
+                  onClick={() => setSelectedInterview(null)} 
+                  className="text-white hover:bg-white/20 rounded-lg p-2 transition-all"
+                >
+                  <span className="text-3xl">×</span>
+                </button>
               </div>
+            </div>
+            <div className="p-6">
 
               {selectedInterview.finalReport ? (
                 <div className="space-y-6">
@@ -243,8 +332,8 @@ export default function ProfilePage() {
                 <p className="text-gray-600">Report not available yet.</p>
               )}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
     </div>
   );

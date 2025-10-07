@@ -7,6 +7,7 @@ export interface IInterviewSession extends Document {
   candidateEmail?: string;
   resumeId?: mongoose.Types.ObjectId;
   status: 'active' | 'completed' | 'cancelled';
+  type: 'interview' | 'coding' | 'combined'; // Type of session
   state: string; // e.g., 'greet', 'resume', 'coding', etc.
   substate: string;
   createdAt: Date;
@@ -39,6 +40,11 @@ const InterviewSessionSchema: Schema = new Schema({
     type: String,
     enum: ['active', 'completed', 'cancelled'],
     default: 'active',
+  },
+  type: {
+    type: String,
+    enum: ['interview', 'coding', 'combined'],
+    default: 'interview',
   },
   state: {
     type: String,

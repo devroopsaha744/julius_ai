@@ -16,7 +16,8 @@ export async function POST(req: Request) {
     recruiterId: body.recruiterId,
     candidateName: body.candidateName,
     candidateEmail: body.candidateEmail,
-    state: 'greet',
+    type: body.type || 'interview', // 'interview', 'coding', or 'combined'
+    state: body.type === 'coding' ? 'coding' : 'greet',
   });
   await s.save();
   return NextResponse.json(s);

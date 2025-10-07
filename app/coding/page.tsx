@@ -2,6 +2,11 @@
 
 import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Play } from "lucide-react";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -38,13 +43,21 @@ export default function CodingPage() {
             <h1 className="text-3xl font-bold">Recruiter Coding Interface</h1>
             <p className="muted">A clean editor to run candidate code and integrate with Judge0</p>
           </div>
-          <div className="editor-actions">
-            <select value={language} onChange={e => setLanguage(e.target.value)} className="px-3 py-2 border rounded">
-              <option value="javascript">JavaScript</option>
-              <option value="python">Python</option>
-              <option value="cpp">C++</option>
-            </select>
-            <button className="btn-primary" onClick={runSubmission} disabled={running}>Run</button>
+          <div className="flex items-center space-x-4">
+            <Select value={language} onValueChange={setLanguage}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="javascript">JavaScript</SelectItem>
+                <SelectItem value="python">Python</SelectItem>
+                <SelectItem value="cpp">C++</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={runSubmission} disabled={running}>
+              <Play className="w-4 h-4 mr-2" />
+              {running ? 'Running...' : 'Run'}
+            </Button>
           </div>
         </div>
 
@@ -55,16 +68,29 @@ export default function CodingPage() {
             </div>
           </div>
 
-          <div>
-            <div className="glass-surface p-4 mb-4">
-              <h4 className="font-semibold mb-2">Input (stdin)</h4>
-              <textarea className="w-full p-2 border rounded" rows={6} value={stdin} onChange={e => setStdin(e.target.value)} />
-            </div>
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Input (stdin)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  rows={6}
+                  value={stdin}
+                  onChange={(e) => setStdin(e.target.value)}
+                  placeholder="Enter input for your code..."
+                />
+              </CardContent>
+            </Card>
 
-            <div className="glass-surface p-4">
-              <h4 className="font-semibold mb-2">Output</h4>
-              <pre className="whitespace-pre-wrap text-sm bg-black/90 text-white p-3 rounded">{output}</pre>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Output</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <pre className="whitespace-pre-wrap text-sm bg-black/90 text-white p-3 rounded min-h-32">{output}</pre>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
